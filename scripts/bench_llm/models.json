@@ -1,0 +1,118 @@
+{
+  "llama_cpp": {
+    "tag": "b10216",
+    "asset": "llama-b10216-bin-win-cpu-x64.zip",
+    "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10216/llama-b10216-bin-win-cpu-x64.zip",
+    "exe_name": "llama-server.exe",
+    "impl_dll": "llama-server-impl.dll",
+    "zip_sha256": "ca78df53654be907193f2615f590c51960f0a009c09285d1d1a5efa8b84d69b9",
+    "exe_sha256": "dcc76b45556b0252b353a4693e84376c8a04d2eb44b5bf153efc18a5556c54e6",
+    "impl_dll_sha256": "9cc77ac1de3f90b3befa47377bb578ee3e3e3979df8b39c5ebbc92b92193c513",
+    "notes": "Pin tag + SHA256 — không dùng latest. Binary CPU x64, chưa ký số."
+  },
+  "models": {
+    "qwen25-05": {
+      "display": "Qwen2.5-0.5B-Instruct",
+      "params_b": 0.49,
+      "license": "Apache-2.0",
+      "catalog_id": "qwen2.5-0.5b-instruct-q4_k_m",
+      "gguf": {
+        "repo": "bartowski/Qwen2.5-0.5B-Instruct-GGUF",
+        "filename": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf",
+        "quant": "Q4_K_M",
+        "sha256": "6eb923e7d26e9cea28811e1a8e852009b21242fb157b26149d3b188f3a8c8653"
+      },
+      "onnx": {
+        "hf_id": "Qwen/Qwen2.5-0.5B-Instruct",
+        "precision": "int4",
+        "notes": "Gói sẵn: xiaoyao9184/Qwen2.5-0.5B-Instruct-onnx-genai (cpu-int4-rtn-block-32-acc-level-4).",
+        "hf_genai_repo": "xiaoyao9184/Qwen2.5-0.5B-Instruct-onnx-genai",
+        "hf_genai_subdir": "cpu_and_mobile/cpu-int4-rtn-block-32-acc-level-4"
+      }
+    },
+    "qwen3-06": {
+      "display": "Qwen3-0.6B",
+      "params_b": 0.6,
+      "license": "Apache-2.0",
+      "catalog_id": "qwen3-0.6b-q4_k_m",
+      "gguf": {
+        "repo": "unsloth/Qwen3-0.6B-GGUF",
+        "filename": "Qwen3-0.6B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
+        "quant": "Q4_K_M",
+        "sha256": "ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a",
+        "notes": "Qwen official chỉ có Q8_0; dùng unsloth Q4_K_M (Apache-2.0)."
+      },
+      "onnx": {
+        "hf_id": "Qwen/Qwen3-0.6B",
+        "precision": "int4",
+        "notes": "Độ phủ ONNX hạn chế — convert tại chỗ hoặc đánh N/A."
+      }
+    },
+    "qwen35-2b": {
+      "display": "Qwen3.5-2B",
+      "params_b": 2.0,
+      "license": "Apache-2.0",
+      "catalog_id": "qwen3.5-2b-q4_k_m",
+      "gguf": {
+        "repo": "bartowski/Qwen_Qwen3.5-2B-GGUF",
+        "filename": "Qwen_Qwen3.5-2B-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/Qwen_Qwen3.5-2B-GGUF/resolve/main/Qwen_Qwen3.5-2B-Q4_K_M.gguf",
+        "quant": "Q4_K_M",
+        "sha256": "57a1085840f497d764a7fc5d346922dbde961efb54cc792ea81d694fd846a1d8",
+        "notes": "SHA256 = Hugging Face LFS OID (blob). Xác nhận lại bằng Get-FileHash sau khi tải."
+      }
+    },
+    "gemma4-e2b": {
+      "display": "Gemma 4 E2B",
+      "params_b": 2.3,
+      "license": "Apache-2.0",
+      "catalog_id": "gemma-4-e2b-it-q4_k_m",
+      "gguf": {
+        "repo": "unsloth/gemma-4-E2B-it-GGUF",
+        "filename": "gemma-4-E2B-it-Q4_K_M.gguf",
+        "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf",
+        "quant": "Q4_K_M",
+        "sha256": "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
+        "notes": "SHA256 = Hugging Face LFS OID (blob). ~3.1 GB — text GGUF only, không kèm mmproj."
+      }
+    },
+    "qwen25-15": {
+      "display": "Qwen2.5-1.5B-Instruct",
+      "params_b": 1.5,
+      "license": "Apache-2.0",
+      "deprecated": true,
+      "notes": "Không còn trong catalog sản phẩm (ADR-006); giữ để so sánh bench cũ.",
+      "gguf": {
+        "repo": "bartowski/Qwen2.5-1.5B-Instruct-GGUF",
+        "filename": "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf",
+        "quant": "Q4_K_M",
+        "sha256": "1adf0b11065d8ad2e8123ea110d1ec956dab4ab038eab665614adba04b6c3370"
+      },
+      "onnx": {
+        "hf_id": "Qwen/Qwen2.5-1.5B-Instruct",
+        "precision": "int4",
+        "notes": "Convert tại chỗ nếu cần."
+      }
+    },
+    "smollm2-360": {
+      "display": "SmolLM2-360M-Instruct",
+      "params_b": 0.36,
+      "license": "Apache-2.0",
+      "gguf": {
+        "repo": "bartowski/SmolLM2-360M-Instruct-GGUF",
+        "filename": "SmolLM2-360M-Instruct-Q4_K_M.gguf",
+        "url": "https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/main/SmolLM2-360M-Instruct-Q4_K_M.gguf",
+        "quant": "Q4_K_M",
+        "sha256": "2fa3f013dcdd7b99f9b237717fa0b12d75bbb89984cc1274be1471a465bac9c2"
+      },
+      "onnx": {
+        "hf_id": "HuggingFaceTB/SmolLM2-360M-Instruct",
+        "precision": "int4",
+        "notes": "Convert tại chỗ nếu cần."
+      }
+    }
+  }
+}

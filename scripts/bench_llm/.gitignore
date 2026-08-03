@@ -1,0 +1,8 @@
+results/
+results_onnx/
+assets/
+*.gguf
+*.zip
+__pycache__/
+*.pyc
+.venv/

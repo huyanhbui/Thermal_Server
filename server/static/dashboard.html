@@ -1,0 +1,2054 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Thermal Auto-Balancer</title>
+<style>
+  /* Hallmark · macrostructure: operational-map · tone: focused · anchor hue: cyan */
+  :root {
+    color-scheme: light;
+    --bg:#0b1020; --surface:#131b2f; --surface-raised:#19233a;
+    --ink:#f2f7ff; --muted:#9aabc2; --line:#2c3a56;
+    --cyan:#4fd1ff; --cyan-strong:#168dca; --good:#6ee7a8;
+    --warn:#f4b860; --danger:#ff7b86;
+  }
+  *, *::before, *::after { box-sizing:border-box; }
+  html, body { overflow-x:clip; }
+  body { margin:0; font-family:"Segoe UI Variable","Segoe UI",sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:14px 24px; background:#171d26; display:flex; justify-content:space-between; align-items:center; }
+  h1 { font-size:18px; margin:0; }
+  .muted { color:#8a97a6; font-size:12px; }
+  #app > main { padding:24px; display:grid; grid-template-columns:minmax(0,7fr) minmax(320px,5fr); gap:24px; max-width:1360px; margin:auto; }
+  .map { position:relative; display:flex; gap:24px; align-items:flex-start; min-height:0; }
+  .gen { width:110px; flex:0 0 110px; padding:14px; text-align:center; border:1px dashed #445; border-radius:10px; position:sticky; top:12px; }
+  .nodes { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:16px; flex:1; min-width:0; }
+  .node { border:2px solid transparent; border-radius:12px; padding:16px; transition:border-color .25s,box-shadow .25s; min-height:170px; position:relative; }
+  .node.risk { border-color:#ff5252; box-shadow:0 0 0 2px #ff525233,0 0 22px #ff525244; }
+  .node.cleared { border-color:#69f0ae; box-shadow:0 0 0 2px #69f0ae44,0 0 24px #69f0ae66; animation:clearFlash 1.2s ease-out; }
+  .node h2 { margin:0 0 8px; font-size:16px; }
+  .node .metric { font-size:13px; margin:2px 0; }
+  .badge { position:absolute; top:12px; right:12px; font-size:11px; padding:3px 8px; border-radius:10px; background:#0008; }
+  .badge.flagged { background:#c62828; animation:pulse 1s infinite alternate; }
+  .badge.warming { background:#9a6b16; }
+  .badge.ok { background:#176b42; }
+  .badge.stale { background:#555; }
+  .decision-reason { margin-top:8px; color:#ffd180; font-size:12px; line-height:1.35; min-height:30px; }
+  #activityFeed { margin-top:12px; max-height:90px; overflow:auto; font-size:12px; color:#b8c4d0; }
+  #activityFeed div { padding:3px 0; border-bottom:1px solid #26303c; }
+  @keyframes pulse { to { opacity:.55; } }
+  @keyframes clearFlash { 0% { opacity:.72; transform:scale(.99); } 100% { opacity:1; transform:scale(1); } }
+  .dot { position:absolute; width:10px; height:10px; border-radius:50%; background:#4fc3f7; transform:translate(var(--dot-x),var(--dot-y)); transition:transform 1.2s linear; z-index:5; }
+  .panel { background:#171d26; border-radius:12px; padding:16px; margin-bottom:20px; }
+  .panel h3 { margin:0 0 10px; font-size:14px; }
+  .row { display:flex; justify-content:space-between; font-size:13px; margin:4px 0; }
+  input[type=number], input[type=text], input[type=password], select {
+    background:#0d1117; color:#e8edf2; border:1px solid #334; border-radius:6px; padding:6px 8px;
+  }
+  input[type=number] { width:70px; }
+  button, a.btn { background:#1f6feb; color:#fff; border:0; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:13px; text-decoration:none; display:inline-block; min-height:44px; white-space:nowrap; transition:background .18s ease, border-color .18s ease, opacity .18s ease; }
+  button:active, a.btn:active { transform:translateY(1px); }
+  button:disabled, a.btn[aria-disabled="true"] { opacity:.55; cursor:not-allowed; }
+  button.ghost { background:transparent; border:1px solid #445; }
+  #alerts { color:#ff8a80; font-size:13px; min-height:18px; margin-top:8px; }
+  #loginOverlay {
+    position:fixed; inset:0; background:#0b0f14ee; display:flex; align-items:center;
+    justify-content:center; z-index:100; overflow:auto; padding:24px;
+  }
+  #loginOverlay.hidden { display:none; }
+  .view-hidden { display:none !important; }
+  #landingView { min-height:100vh; overflow:hidden; background:var(--bg); }
+  .landing-nav, .landing-main { width:min(1180px, calc(100% - 40px)); margin:auto; }
+  .landing-nav { min-height:76px; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  .brand { display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:700; letter-spacing:-.02em; }
+  .brand-mark { width:32px; height:32px; color:var(--cyan); flex:0 0 auto; }
+  .landing-nav-actions { display:flex; align-items:center; gap:10px; }
+  #runtimeNotice { margin:0 auto; width:min(1180px,calc(100% - 40px)); color:#ffd18b; font-size:13px; line-height:1.45; }
+  .landing-nav .ghost { border-color:var(--line); color:#dbeafe; }
+  .landing-main { display:block; padding:72px 0 48px; }
+  .landing-hero { display:grid; grid-template-columns:minmax(0,1.06fr) minmax(320px,.94fr); align-items:center; gap:42px; }
+  .eyebrow { color:var(--cyan); font-size:12px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
+  .landing-hero h1 { margin:16px 0; font-size:clamp(36px, 5vw, 64px); line-height:1.03; letter-spacing:-.055em; max-width:760px; }
+  .landing-lede { max-width:640px; color:#bdcbe0; font-size:18px; line-height:1.6; margin:0; }
+  .landing-cta { display:flex; flex-wrap:wrap; gap:12px; margin-top:28px; }
+  .landing-cta button { min-height:46px; padding:10px 18px; font-size:14px; }
+  .landing-cta .ghost { border-color:#50627f; color:#dce8fb; }
+  .landing-fineprint { color:var(--muted); font-size:12px; line-height:1.5; margin:15px 0 0; }
+  .flow-card { padding:24px; border:1px solid #31415f; border-radius:20px; background:#111a2c; }
+  .flow-card svg { display:block; width:100%; height:auto; }
+  .flow-legend { display:flex; flex-wrap:wrap; gap:8px 16px; margin:16px 0 0; color:#b9c7db; font-size:12px; }
+  .flow-legend span::before { content:""; display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; background:var(--cyan); }
+  .flow-legend span:nth-child(2)::before { background:var(--good); }
+  .flow-legend span:nth-child(3)::before { background:var(--warn); }
+  .landing-section { margin-top:88px; }
+  .landing-section h2 { margin:0 0 12px; font-size:28px; letter-spacing:-.035em; }
+  .landing-section > p { color:var(--muted); margin:0; line-height:1.55; }
+  .truth-grid { display:grid; grid-template-columns:minmax(0, 1.18fr) minmax(0, .82fr) minmax(0, 1fr); gap:16px; margin-top:24px; }
+  .steps-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:16px; margin-top:24px; }
+  .truth-card, .step-card { padding:20px; border:1px solid var(--line); border-radius:14px; background:#121a2bd6; }
+  .truth-card svg, .step-number { color:var(--cyan); width:22px; height:22px; }
+  .truth-card h3, .step-card h3 { margin:14px 0 8px; font-size:15px; }
+  .truth-card h3 { display:flex; align-items:center; gap:9px; }
+  .truth-card p, .step-card p { margin:0; color:#aebdd1; font-size:13px; line-height:1.55; }
+  .step-number { display:grid; place-items:center; border:1px solid #3d7fa1; border-radius:50%; font-size:12px; font-weight:700; }
+  .login-box {
+    background:#171d26; padding:28px 32px; border-radius:12px; width:min(420px, 94vw);
+    border:1px solid #2a3340;
+  }
+  .login-box h2 { margin:0 0 6px; font-size:18px; }
+  .login-box label { display:block; font-size:12px; color:#8a97a6; margin:12px 0 4px; }
+  .login-box input[type=text], .login-box input[type=password] { width:100%; box-sizing:border-box; }
+  .login-box .err { color:#ff8a80; font-size:12px; min-height:16px; margin-top:10px; }
+  .login-box button { width:100%; margin-top:12px; padding:10px; }
+  .landing-tabs { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0 8px; }
+  .landing-tabs button { flex:1; min-width:100px; width:auto; margin:0; padding:8px; font-size:12px; }
+  .landing-tabs button.active { outline:2px solid #4fc3f7; }
+  .landing-pane { display:none; }
+  .landing-pane.active { display:block; }
+  .landing-hint { font-size:11px; color:#8a97a6; line-height:1.45; margin:8px 0 0; }
+  .password-control { display:flex; gap:6px; align-items:center; }
+  .password-control input { flex:1; min-width:0; }
+  .password-toggle { flex:0 0 auto; width:auto !important; margin:0 !important; padding:6px 9px !important; }
+  #app.hidden { display:none; }
+  textarea {
+    width:100%; box-sizing:border-box; min-height:72px; resize:vertical;
+    background:#0d1117; color:#e8edf2; border:1px solid #334; border-radius:6px;
+    padding:8px; font-family:inherit; font-size:13px;
+  }
+  #chatOut {
+    margin-top:10px; font-size:13px; white-space:pre-wrap; background:#0d1117;
+    border-radius:8px; padding:10px; min-height:48px; border:1px solid #2a3340;
+  }
+  #chatHistory { display:grid; gap:8px; margin-top:12px; max-height:230px; overflow:auto; }
+  .chat-history-item { padding:10px; border-left:2px solid #3b82b6; background:#111927; border-radius:0 8px 8px 0; }
+  .chat-history-item.error { border-left-color:#ff7b86; }
+  .chat-history-meta { color:#91a6c3; font-size:11px; margin-bottom:5px; }
+  .chat-history-text { white-space:pre-wrap; font-size:12px; line-height:1.45; }
+  #chatNode { color:#7ee787; font-size:12px; margin-top:6px; min-height:16px; }
+  #chatStatus { color:#8a97a6; font-size:12px; margin-top:4px; min-height:16px; }
+  #copyStatus { color:#8a97a6; font-size:11px; min-height:16px; margin-top:6px; }
+  .host-empty {
+    width:100%; min-height:176px; padding:20px; border:1px dashed #445;
+    border-radius:10px; background:#141a22; display:flex; flex-direction:column;
+    justify-content:center; align-items:flex-start; gap:8px;
+  }
+  .host-empty h2 { margin:0; font-size:15px; }
+  .host-empty p { margin:0; max-width:420px; line-height:1.45; }
+  .host-empty button { margin-top:4px; }
+  .health-strip { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1px; max-width:1360px; margin:0 auto; background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .health-strip > div { min-width:0; padding:10px 14px; background:var(--surface); }
+  .health-strip span { display:block; color:var(--muted); font-size:11px; }
+  .health-strip b { display:block; margin-top:3px; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #app aside { display:flex; flex-direction:column; min-width:0; }
+  #app aside .chat-panel { order:-1; position:sticky; top:12px; z-index:2; }
+  .disclose { font-size:11px; color:#8a97a6; margin:0 0 8px; line-height:1.4; }
+  /* ESG ba tầng — ba khối tách bạch, không dòng tổng (docs/07 §8) */
+  .esg-stack { display:flex; flex-direction:column; gap:10px; }
+  .esg-block {
+    border-radius:8px; padding:10px 12px; border:1px solid transparent;
+  }
+  .esg-t1 { background:#13241c; border-color:#2d5a40; }
+  .esg-t2 { background:#241c12; border-color:#5a452d; }
+  .esg-t3 {
+    background:#1a1520; border-color:#4a3a5c;
+    border-style:dashed; /* dự phóng — không giống số đo */
+  }
+  .esg-head {
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin:0 0 8px; font-size:12px; font-weight:600; letter-spacing:.02em;
+  }
+  .esg-badge {
+    font-size:10px; font-weight:500; padding:2px 7px; border-radius:4px;
+    background:#0006; color:#c8d0d8;
+  }
+  .esg-badge.ok { color:#7dcea0; }
+  .esg-badge.warn { color:#f0b27a; }
+  .esg-badge.proj { color:#c39bd3; text-transform:uppercase; }
+  .esg-dim { opacity:.45; } /* J/token mờ khi chưa đủ dữ liệu */
+  .esg-note { font-size:10px; color:#8a97a6; margin:6px 0 0; line-height:1.35; }
+  .esg-assump { font-size:10px; color:#a08060; margin:2px 0 6px 8px; line-height:1.3; }
+  .esg-details { margin-top:10px; color:#8a97a6; font-size:11px; line-height:1.4; }
+  .esg-details summary { cursor:pointer; color:#b8c4d0; }
+  .esg-details-content { margin-top:8px; }
+  .esg-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .esg-actions a.btn, .esg-actions button {
+    font-size:11px; padding:5px 10px; background:#243044;
+  }
+  .esg-seg { font-size:10px; color:#f0b27a; margin-bottom:6px; }
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, .node:focus-visible { outline:2px solid #4fc3f7; outline-offset:2px; }
+  @media (max-width:900px) { #app > main { grid-template-columns:1fr; } #app aside .chat-panel { position:static; } }
+  @media (max-width:760px) { #app > main { padding:16px; } .health-strip { grid-template-columns:repeat(2,minmax(0,1fr)); margin:0 16px; } .map { display:block; } .gen { width:auto; position:static; margin-bottom:14px; } .nodes { grid-template-columns:repeat(2,minmax(0,1fr)); } header { align-items:flex-start; gap:10px; flex-wrap:wrap; } .landing-nav,.landing-main { width:min(100% - 32px,1180px); } .landing-main { padding-top:42px; } .landing-hero { grid-template-columns:1fr; gap:28px; } .landing-hero h1 { font-size:clamp(36px,11vw,52px); } .truth-grid,.steps-grid { grid-template-columns:1fr; } .landing-section { margin-top:56px; } }
+  @media (max-width:480px) { .health-strip { grid-template-columns:1fr; } .nodes { grid-template-columns:1fr; } header { padding:12px 16px; } .login-box { padding:24px 20px; } .password-control { align-items:stretch; } .password-toggle { padding:6px 8px !important; } }
+  @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
+  /* Light-first operational refresh. Semantic tokens keep every surface coherent. */
+  :root {
+    color-scheme: light;
+    --bg:#f4f7fb; --surface:#ffffff; --surface-raised:#f8fafc;
+    --ink:#172033; --muted:#526176; --line:#d7e0eb;
+    --cyan:#0969a8; --cyan-strong:#075985; --good:#137a4a;
+    --warn:#a65d00; --danger:#b4232d; --focus:#155eef;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 5px 15px rgba(16,24,40,.06);
+    --shadow-raised:0 10px 25px rgba(16,24,40,.09);
+  }
+  :root[data-theme="dark"], [data-theme="dark"] {
+    color-scheme:dark;
+    --bg:#101827; --surface:#172033; --surface-raised:#202c41;
+    --ink:#f7f9fc; --muted:#b3c0d3; --line:#34445e;
+    --cyan:#66c7ff; --cyan-strong:#2ea5e8; --good:#65d99a;
+    --warn:#ffbf66; --danger:#ff8c96; --focus:#92c5ff;
+    --shadow:0 1px 2px rgba(0,0,0,.18),0 6px 20px rgba(0,0,0,.18);
+    --shadow-raised:0 12px 30px rgba(0,0,0,.28);
+  }
+  body { background:var(--bg); color:var(--ink); line-height:1.45; }
+  header { max-width:1360px; margin:auto; padding:18px 24px 14px; background:transparent; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; letter-spacing:-.02em; }
+  .muted, .landing-hint, .disclose, .esg-note, .esg-details, .landing-fineprint { color:var(--muted) !important; }
+  button, a.btn { background:var(--cyan); border:1px solid var(--cyan); border-radius:8px; font-weight:650; box-shadow:0 1px 1px rgba(16,24,40,.08); }
+  button:hover, a.btn:hover { background:var(--cyan-strong); border-color:var(--cyan-strong); }
+  button.ghost, .landing-nav .ghost { color:var(--ink); border-color:var(--line); background:var(--surface); box-shadow:none; }
+  button.ghost:hover, .landing-nav .ghost:hover { background:var(--surface-raised); border-color:var(--cyan); }
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .node:focus-visible { outline:3px solid color-mix(in srgb,var(--focus) 40%,transparent); outline-offset:2px; }
+  input[type=number], input[type=text], input[type=password], select, textarea { background:var(--surface); color:var(--ink); border-color:var(--line); border-radius:8px; }
+  #landingView { background:var(--bg); }
+  .flow-card, .truth-card, .step-card, .login-box { background:var(--surface); border-color:var(--line); box-shadow:var(--shadow); }
+  .flow-card svg rect { fill:var(--surface-raised) !important; stroke:var(--line) !important; }
+  .flow-card svg text { fill:var(--ink) !important; }
+  .flow-card svg path { stroke:var(--cyan); }
+  .landing-hero h1, .landing-section h2 { color:var(--ink); }
+  .landing-lede, .truth-card p, .step-card p { color:var(--muted); }
+  .flow-legend { color:var(--muted); }
+  .health-strip { max-width:1312px; margin:18px auto 0; gap:8px; background:transparent; border:0; border-radius:0; overflow:visible; }
+  .health-strip > div { padding:13px 15px; background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:var(--shadow); }
+  .health-strip span { color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.055em; }
+  .health-strip b { color:var(--ink); font-size:14px; }
+  #app > main { max-width:1360px; padding:20px 24px 36px; grid-template-columns:minmax(0,1fr) minmax(300px,.42fr); gap:20px; }
+  .map { display:block; }
+  .gen { width:auto; padding:10px 12px; margin:0 0 14px; border:1px solid var(--line); border-radius:10px; position:static; text-align:left; background:var(--surface-raised); color:var(--ink); }
+  .nodes { grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+  .node { min-height:0; padding:17px; border:1px solid var(--line); border-radius:12px; background:var(--surface) !important; box-shadow:var(--shadow); overflow:hidden; }
+  .node:hover { box-shadow:var(--shadow-raised); border-color:color-mix(in srgb,var(--cyan) 45%,var(--line)); }
+  .node.risk { border-color:var(--danger); box-shadow:0 0 0 1px color-mix(in srgb,var(--danger) 45%,transparent),var(--shadow); }
+  .node.cleared { border-color:var(--good); box-shadow:0 0 0 1px color-mix(in srgb,var(--good) 40%,transparent),var(--shadow); }
+  .node h2 { margin:0; padding-right:105px; font-size:15px; }
+  .node .metric { color:var(--muted); margin:0; font-size:12px; }
+  .node .node-hero { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin:14px 0 12px; }
+  .node .temp-reading { color:var(--ink); font-size:33px; font-weight:750; line-height:1; letter-spacing:-.055em; }
+  .node .temp-reading small { font-size:12px; font-weight:600; letter-spacing:0; color:var(--muted); }
+  .node .forecast-reading { text-align:right; color:var(--ink); font-size:15px; font-weight:700; }
+  .node .forecast-reading span { display:block; margin-top:2px; color:var(--muted); font-size:11px; font-weight:500; }
+  .node .safety-bar { height:6px; margin:0 0 12px; border-radius:99px; overflow:hidden; background:#dce5f0; }
+  .node .safety-bar > span { display:block; height:100%; border-radius:inherit; background:var(--good); transition:width .2s ease,background .2s ease; }
+  .node .metric-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 12px; padding-top:10px; border-top:1px solid var(--line); }
+  .node .metric[data-k="jobs"] { grid-column:span 2; }
+  .badge { position:absolute; top:14px; right:14px; padding:4px 8px; border:1px solid currentColor; border-radius:99px; background:transparent; font-weight:700; letter-spacing:.045em; }
+  .badge.flagged { color:var(--danger); background:color-mix(in srgb,var(--danger) 10%,transparent); animation:none; }
+  .badge.warming { color:var(--warn); background:color-mix(in srgb,var(--warn) 10%,transparent); }
+  .badge.ok { color:var(--good); background:color-mix(in srgb,var(--good) 10%,transparent); }
+  .badge.stale { color:var(--muted); background:var(--surface-raised); }
+  .decision-reason { margin:12px 0 0; padding:8px 10px; border-left:3px solid var(--warn); border-radius:0 6px 6px 0; color:var(--ink); background:color-mix(in srgb,var(--warn) 9%,var(--surface)); min-height:0; font-size:12px; }
+  #alerts { min-height:0; margin:14px 0; padding:0; color:var(--danger); font-weight:650; }
+  .panel { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:14px; box-shadow:var(--shadow); }
+  .panel h3 { color:var(--ink); font-size:13px; letter-spacing:.01em; }
+  .row { color:var(--muted); gap:12px; }
+  .row b { color:var(--ink); text-align:right; }
+  #activityFeed { color:var(--muted); max-height:150px; }
+  #activityFeed div { border-color:var(--line); }
+  .chart-panel { padding:0; overflow:hidden; }
+  .chart-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:16px 16px 0; }
+  .chart-head h3 { margin:0; }
+  .chart-subtitle { color:var(--muted); font-size:11px; }
+  .thermal-chart { display:block; width:100%; min-height:230px; margin-top:8px; background:linear-gradient(180deg,color-mix(in srgb,var(--cyan) 3%,transparent),transparent 75%); }
+  .chart-empty { display:grid; min-height:230px; place-items:center; padding:20px; color:var(--muted); text-align:center; font-size:13px; }
+  .chart-legend { display:flex; flex-wrap:wrap; gap:8px 14px; padding:0 16px 14px; color:var(--muted); font-size:11px; }
+  .chart-legend span::before { content:""; display:inline-block; width:10px; height:3px; margin:0 5px 2px 0; border-radius:99px; background:var(--legend,var(--cyan)); vertical-align:middle; }
+  .chart-legend .forecast::before { background:repeating-linear-gradient(90deg,var(--cyan) 0 4px,transparent 4px 7px); }
+  .chart-a11y { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  details.panel > summary { display:flex; align-items:center; justify-content:space-between; min-height:28px; cursor:pointer; color:var(--ink); font-size:13px; font-weight:700; }
+  details.panel > summary::after { content:"⌄"; color:var(--muted); font-size:16px; transition:transform .18s ease; }
+  details.panel[open] > summary::after { transform:rotate(180deg); }
+  details.panel > summary::-webkit-details-marker { display:none; }
+  .disclosure-content { padding-top:14px; }
+  #app aside { gap:0; }
+  #app aside .chat-panel { order:0; position:static; }
+  .esg-t1 { background:color-mix(in srgb,var(--good) 8%,var(--surface)); border-color:color-mix(in srgb,var(--good) 35%,var(--line)); }
+  .esg-t2 { background:color-mix(in srgb,var(--warn) 8%,var(--surface)); border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
+  .esg-t3 { background:color-mix(in srgb,#7667b8 7%,var(--surface)); border-color:#8174bc; }
+  #chatOut, .chat-history-item { background:var(--surface-raised); border-color:var(--line); color:var(--ink); }
+  .host-empty { background:var(--surface); border-color:var(--line); color:var(--ink); box-shadow:var(--shadow); }
+  .host-empty p { color:var(--muted); }
+  .dot { background:var(--cyan); }
+  .theme-toggle { display:inline-flex; align-items:center; gap:6px; min-width:44px; justify-content:center; }
+  .theme-toggle svg { width:17px; height:17px; }
+  @media (max-width:900px) { #app > main { grid-template-columns:1fr; } #app aside { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; align-items:start; } #app aside .panel { margin:0; } #app aside .chat-panel { grid-column:span 2; } }
+  @media (max-width:760px) { header { padding:14px 16px; } #app > main { padding:16px; } .health-strip { margin:14px 16px 0; } .chart-head { display:block; } .chart-subtitle { display:block; margin-top:4px; } }
+  @media (max-width:600px) { #app aside { display:flex; } #app aside .chat-panel { order:-1; } .node .temp-reading { font-size:30px; } .chart-panel { margin-top:0; } }
+</style>
+</head>
+<body>
+<div id="landingView">
+  <nav class="landing-nav" aria-label="Điều hướng trang giới thiệu">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" fill="none">
+        <path d="M10 6a8 8 0 1 1-2.8 15.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M10 6v11.2a4 4 0 1 0 4.5 0V6a2.25 2.25 0 0 0-4.5 0Z" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+        <path d="M19.5 12.5 24 16l-4.5 3.5M23.5 16h-8" stroke="#6ee7a8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Thermal Orchestrator</span>
+    </div>
+    <div class="landing-nav-actions">
+      <button class="ghost theme-toggle" id="themeToggleLanding" type="button" aria-label="Bật giao diện tối" aria-pressed="false" onclick="toggleTheme()">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8L17 7m-10 10-1.4 1.4M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <span class="theme-toggle-text">Giao diện tối</span>
+      </button>
+      <button type="button" class="ghost" onclick="showAuthFromLanding('join')">Tham gia phòng</button>
+      <button type="button" id="openCreateFromLanding" onclick="showAuthFromLanding('create')">Tạo phòng</button>
+    </div>
+  </nav>
+  <p id="runtimeNotice" role="status" aria-live="polite" hidden></p>
+  <main class="landing-main">
+    <section class="landing-hero" aria-labelledby="landingTitle">
+      <div>
+        <div class="eyebrow">Điều phối LLM trên máy thật</div>
+        <h1 id="landingTitle">Đưa tác vụ AI đến máy đang sẵn sàng — dựa trên nhiệt độ thật.</h1>
+        <p class="landing-lede">Thermal Orchestrator theo dõi telemetry từ các máy Windows và chỉ giao một tác vụ LLM hoàn chỉnh cho node có đúng model, còn đủ tài nguyên và đang ở trạng thái READY.</p>
+        <div class="landing-cta">
+          <button type="button" onclick="showAuthFromLanding('create')">Tạo phòng trên máy này</button>
+          <button type="button" class="ghost" id="openJoinFromLanding" onclick="showAuthFromLanding('join')">Tham gia bằng link</button>
+        </div>
+        <p class="landing-fineprint">Lần cài đầu cần Windows và xác nhận UAC để NodeAgent đọc cảm biến. Model được tải khi bạn chọn, không nằm sẵn trong bộ cài.</p>
+      </div>
+      <div class="flow-card" aria-label="Sơ đồ Host điều phối worker outbound">
+        <svg viewBox="0 0 540 310" role="img" aria-label="Trình duyệt kết nối Host; các máy worker chủ động gửi telemetry và nhận tác vụ">
+          <rect x="18" y="113" width="118" height="82" rx="12" fill="#0b1324" stroke="#4fd1ff"/>
+          <text x="77" y="145" text-anchor="middle" fill="#f2f7ff" font-family="Segoe UI" font-size="14" font-weight="600">Trình duyệt</text>
+          <text x="77" y="168" text-anchor="middle" fill="#9aabc2" font-family="Segoe UI" font-size="11">Dashboard · WebSocket</text>
+          <rect x="212" y="81" width="122" height="146" rx="14" fill="#10223a" stroke="#4fd1ff" stroke-width="2"/>
+          <text x="273" y="123" text-anchor="middle" fill="#f2f7ff" font-family="Segoe UI" font-size="15" font-weight="700">Host</text>
+          <text x="273" y="148" text-anchor="middle" fill="#9aabc2" font-family="Segoe UI" font-size="11">Phòng · Scheduler</text>
+          <text x="273" y="169" text-anchor="middle" fill="#9aabc2" font-family="Segoe UI" font-size="11">Audit · Tunnel</text>
+          <path d="M136 154h67" stroke="#4fd1ff" stroke-width="2" stroke-linecap="round"/><path d="m197 148 8 6-8 6" fill="none" stroke="#4fd1ff" stroke-width="2"/>
+          <rect x="410" y="27" width="112" height="82" rx="12" fill="#0b1324" stroke="#6ee7a8"/>
+          <rect x="410" y="202" width="112" height="82" rx="12" fill="#0b1324" stroke="#6ee7a8"/>
+          <text x="466" y="59" text-anchor="middle" fill="#f2f7ff" font-family="Segoe UI" font-size="14" font-weight="600">Host agent</text>
+          <text x="466" y="82" text-anchor="middle" fill="#9aabc2" font-family="Segoe UI" font-size="11">Telemetry · LLM</text>
+          <text x="466" y="234" text-anchor="middle" fill="#f2f7ff" font-family="Segoe UI" font-size="14" font-weight="600">Máy khách</text>
+          <text x="466" y="257" text-anchor="middle" fill="#9aabc2" font-family="Segoe UI" font-size="11">Outbound only</text>
+          <path d="M342 124 404 78M342 188l62 47" stroke="#6ee7a8" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 6"/>
+          <text x="369" y="105" fill="#f4b860" font-family="Segoe UI" font-size="10">telemetry / job</text>
+          <text x="365" y="216" fill="#f4b860" font-family="Segoe UI" font-size="10">telemetry / job</text>
+        </svg>
+        <div class="flow-legend"><span>Điều phối an toàn</span><span>Node READY</span><span>Luồng chủ động từ agent</span></div>
+      </div>
+    </section>
+    <section class="landing-section" aria-labelledby="truthTitle">
+      <h2 id="truthTitle">Ba điều hệ thống cam kết hiển thị đúng</h2>
+      <p>Không tô xanh bằng dữ liệu giả và không biến suy luận thành số đo.</p>
+      <div class="truth-grid">
+        <article class="truth-card"><h3><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 3v18M4 8l8-5 8 5v8l-8 5-8-5V8Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>Worker chỉ kết nối ra ngoài</h3><p>Máy khách tự gửi telemetry và tự lấy job. Không mở cổng lắng nghe trên worker.</p></article>
+        <article class="truth-card"><h3><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M4 19V9m5 10V5m5 14v-7m5 7V3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Số đo thật tách khỏi số suy ra</h3><p>ESG phân biệt ĐO THẬT, SUY RA và DỰ PHÓNG; không cộng gộp để tạo một kết quả đẹp mắt.</p></article>
+        <article class="truth-card"><h3><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="m5 12 4.2 4.2L19 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Job chỉ tới đúng model READY</h3><p>Model, hash, generation và runtime phải khớp trước khi node được chọn nhận chat.</p></article>
+      </div>
+    </section>
+    <section class="landing-section" aria-labelledby="stepsTitle">
+      <h2 id="stepsTitle">Bắt đầu trong ba bước</h2>
+      <div class="steps-grid">
+        <article class="step-card"><div class="step-number">1</div><h3>Tạo phòng</h3><p>Đặt mật khẩu worker và admin. Host sẽ chuẩn bị NodeAgent cục bộ.</p></article>
+        <article class="step-card"><div class="step-number">2</div><h3>Cho phép agent sẵn sàng</h3><p>Xác nhận UAC, tải model đã chọn và chờ telemetry đầu tiên.</p></article>
+        <article class="step-card"><div class="step-number">3</div><h3>Thêm máy khách khi cần</h3><p>Chạy wizard, dùng URL LAN hoặc tunnel và để agent tham gia bằng kết nối outbound.</p></article>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="loginOverlay" class="hidden">
+  <div class="login-box">
+    <h2>Thermal Orchestrator</h2>
+    <p class="muted">Tạo phòng hoặc tham gia bằng link.</p>
+    <p class="landing-hint" id="roomLockedBanner" hidden></p>
+    <div class="landing-tabs">
+      <button type="button" id="tabCreate" class="active" onclick="showLandingTab('create')">Tạo phòng</button>
+      <button type="button" id="tabJoin" onclick="showLandingTab('join')">Tham gia link</button>
+    </div>
+
+    <div id="paneCreate" class="landing-pane active">
+      <form onsubmit="return false" novalidate>
+      <p class="muted" id="createGateHint"></p>
+      <label for="createName">Tên phòng</label>
+      <input type="text" id="createName" placeholder="Tên phòng" autocomplete="off">
+      <label for="createWorker">Mật khẩu worker</label>
+      <div class="password-control">
+        <input type="password" id="createWorker" autocomplete="new-password">
+        <button class="ghost password-toggle" type="button" aria-controls="createWorker"
+                aria-pressed="false" onclick="togglePassword('createWorker', this)">Hiện</button>
+      </div>
+      <label for="createAdmin">Mật khẩu admin</label>
+      <div class="password-control">
+        <input type="password" id="createAdmin" autocomplete="new-password">
+        <button class="ghost password-toggle" type="button" aria-controls="createAdmin"
+                aria-pressed="false" onclick="togglePassword('createAdmin', this)">Hiện</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-weight:normal">
+        <input type="checkbox" id="createNewCode"> Mã phòng mới
+      </label>
+      <button type="button" id="btnCreateRoom" onclick="doCreateRoom()">Tạo và vào dashboard</button>
+      <button type="button" id="btnReopenBootstrap" hidden
+              onclick="doReopenBootstrap()">Mở lại tạo phòng</button>
+      </form>
+    </div>
+
+    <div id="paneJoin" class="landing-pane">
+      <form onsubmit="return false" novalidate>
+      <label for="joinLink">Link mời</label>
+      <input type="text" id="joinLink" placeholder="…/join?code=THERMAL-…"
+             autocomplete="username">
+      <label for="joinPass">Mật khẩu admin</label>
+      <div class="password-control">
+        <input type="password" id="joinPass" autocomplete="current-password">
+        <button class="ghost password-toggle" type="button" aria-controls="joinPass"
+                aria-pressed="false" onclick="togglePassword('joinPass', this)">Hiện</button>
+      </div>
+      <button type="button" onclick="doJoinLink()">Tham gia</button>
+      </form>
+    </div>
+
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+<div id="app" class="hidden">
+<header>
+  <h1>Thermal Orchestrator — Điều phối tải AI</h1>
+  <span>
+    <span class="muted" id="forecastBadge">nhiệt: …</span>
+    <span class="muted" id="chatModelBadge" style="margin-left:8px">chat: …</span>
+    <button class="ghost theme-toggle" id="themeToggle" type="button" aria-label="Bật giao diện tối" aria-pressed="false" onclick="toggleTheme()">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6l1.4 1.4m10 10 1.4 1.4m0-12.8L17 7m-10 10-1.4 1.4M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="theme-toggle-text">Giao diện tối</span>
+    </button>
+    <button class="ghost" style="margin-left:8px" onclick="goJoinOtherRoom()">Tham gia link</button>
+    <button class="ghost" id="btnHeaderReopen" style="margin-left:4px;display:none"
+            onclick="doReopenFromApp()">Mở lại tạo phòng</button>
+    <button class="ghost" style="margin-left:8px" onclick="doLogout()">Đăng xuất</button>
+  </span>
+</header>
+<section class="health-strip" aria-label="Tình trạng vận hành">
+  <div><span>Host agent</span><b id="healthHost">Chờ cấu hình</b></div>
+  <div><span>Node đang thấy</span><b id="healthNodes">0</b></div>
+  <div><span>LLM</span><b id="healthLlm">Chưa sẵn sàng</b></div>
+  <div><span>Hàng đợi</span><b id="healthQueue">0</b></div>
+</section>
+<main>
+  <section>
+    <div class="map" id="map">
+      <div class="gen" id="gen" aria-label="Nguồn yêu cầu chat">Yêu cầu<br>chat<br><span class="muted" id="qlen">hàng đợi: 0</span></div>
+      <section class="node-kpis" id="nodeKpis" aria-label="Tình trạng từng node">
+      <div class="nodes" id="nodes" aria-live="polite">
+        <section class="host-empty" id="hostEmpty" aria-labelledby="hostEmptyTitle">
+          <h2 id="hostEmptyTitle">Đang chờ Host agent</h2>
+          <p class="muted" id="hostEmptyMessage">Host sẽ xuất hiện ở đây sau khi NodeAgent gửi telemetry đầu tiên.</p>
+          <button type="button" id="retryLocalAgent" class="ghost" onclick="retryLocalAgent()" hidden>Thử lại Host agent</button>
+          <div class="host-agent-credentials" id="hostAgentCredentials" hidden>
+            <label for="hostAgentWorker">Mật khẩu worker để cấp lại Host agent</label>
+            <div class="password-control">
+              <input type="password" id="hostAgentWorker" autocomplete="current-password">
+              <button class="ghost password-toggle" type="button" aria-controls="hostAgentWorker"
+                      aria-pressed="false" onclick="togglePassword('hostAgentWorker', this)">Hiện</button>
+            </div>
+            <button type="button" onclick="retryLocalAgent(true)">Cấp lại và khởi động</button>
+          </div>
+        </section>
+      </div>
+      </section>
+    </div>
+    <section class="panel chart-panel" aria-labelledby="chartTitle">
+      <div class="chart-head">
+        <div><h3 id="chartTitle">Nhiệt độ theo thời gian</h3><span class="chart-subtitle">15 phút gần nhất · đoạn nét đứt là dự báo 3 phút</span></div>
+        <span class="chart-readout" id="chartReadout">Chờ telemetry</span>
+      </div>
+      <div id="chartEmptyState" class="chart-empty" role="status">Chưa có telemetry để vẽ biểu đồ. Node sẽ xuất hiện sau snapshot đầu tiên.</div>
+      <svg id="telemetryChart" class="thermal-chart" viewBox="0 0 760 250" role="img" aria-labelledby="chartTitle chartSummary" hidden></svg>
+      <p id="chartSummary" class="chart-a11y" aria-live="polite">Chưa có dữ liệu nhiệt độ.</p>
+      <div class="chart-legend" aria-hidden="true"><span style="--legend:#0969a8">Nhiệt CPU đo được</span><span class="forecast" style="--legend:#a65d00">Dự báo 3 phút</span><span style="--legend:#b4232d">Ngưỡng quyết định</span></div>
+    </section>
+    <div id="alerts"></div>
+    <div class="panel" style="margin-top:12px">
+      <h3>Luồng điều phối gần đây</h3>
+      <div id="activityFeed" aria-live="polite"></div>
+    </div>
+  </section>
+  <aside>
+    <div class="panel">
+      <h3>Tiết kiệm &amp; ESG</h3>
+      <div class="esg-stack">
+        <div class="esg-block esg-t1" id="esgBlock1">
+          <div class="esg-head">
+            <span>ĐO THẬT</span>
+            <span class="esg-badge ok" id="esgConfBadge">–</span>
+          </div>
+          <div class="row" id="esgJptRow"><span>Năng lượng / token</span><b id="esgJpt">–</b></div>
+          <div class="row"><span>Mốc round-robin</span><b id="esgJptBase">–</b></div>
+          <div class="row"><span>So mốc</span><b id="esgImpr">–</b></div>
+          <div class="row"><span>Throttle tránh được</span><b id="esgThrottle">–</b></div>
+          <div class="row"><span>Độ trễ trung vị</span><b id="esgLatMed">–</b></div>
+        </div>
+        <div class="esg-block esg-t2" id="esgBlock2">
+          <div class="esg-head">
+            <span>SUY RA</span>
+            <span class="esg-badge warn">có giả định</span>
+          </div>
+          <div class="row"><span>Điện rò tiết kiệm</span><b id="esgLeak">–</b></div>
+          <div class="row"><span>Điện quạt tiết kiệm</span><b id="esgFan">–</b></div>
+          <div class="row"><span>Làm mát phòng</span><b id="esgCool">–</b></div>
+        </div>
+        <div class="esg-block esg-t3" id="esgBlock3">
+          <div class="esg-head">
+            <span>DỰ PHÓNG</span>
+            <span class="esg-badge proj">không phải số đo</span>
+          </div>
+          <p class="muted" id="esgProjectedUnavailable" hidden>Chưa đủ dữ liệu</p>
+          <div id="esgProjectedRows">
+            <div class="row"><span>kWh chiếu từ đo</span><b id="esgKwhMeas">–</b></div>
+            <div class="row"><span>₫ chiếu từ đo</span><b id="esgVndMeas">–</b></div>
+            <div class="row"><span>CO₂ chiếu từ đo</span><b id="esgCo2Meas">–</b></div>
+            <div class="row" style="margin-top:8px"><span>kWh chiếu từ suy ra</span><b id="esgKwhDer">–</b></div>
+            <div class="row"><span>₫ chiếu từ suy ra</span><b id="esgVndDer">–</b></div>
+            <div class="row"><span>CO₂ chiếu từ suy ra</span><b id="esgCo2Der">–</b></div>
+          </div>
+        </div>
+      </div>
+      <details class="esg-details">
+        <summary>Chi tiết cách tính</summary>
+        <div class="esg-details-content">
+          <p class="esg-note" id="esgT1Note"></p>
+          <p class="esg-assump" id="esgAssumpLeak"></p>
+          <p class="esg-assump" id="esgAssumpFan"></p>
+          <p class="esg-assump" id="esgAssumpCool"></p>
+          <p class="esg-note" id="esgScaleNote"></p>
+          <p class="esg-note" id="esgTier3LabelMeas"></p>
+          <p class="esg-note" id="esgTier3LabelDer"></p>
+          <div id="esgSegNote" class="esg-seg" hidden></div>
+        </div>
+      </details>
+      <div class="esg-actions">
+        <a class="btn" id="csvReportLink" href="#">Xuất CSV báo cáo</a>
+        <a class="btn" id="csvEventsLink" href="#">Xuất nhật ký kiểm toán</a>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Thời tiết môi trường</h3>
+      <div class="row"><span>Nhiệt môi trường</span><b id="weatherTemp">–</b></div>
+      <div class="row"><span>Cảm giác như</span><b id="weatherFeels">–</b></div>
+      <div class="row"><span>Site</span><b id="weatherSite">–</b></div>
+      <p class="muted" id="weatherDetail" style="font-size:11px"></p>
+    </div>
+    <details class="panel disclosure-panel">
+      <summary>Phòng của tôi <span class="muted">mời &amp; cấu hình</span></summary>
+      <div class="disclosure-content">
+      <div class="row"><span>Tên</span><b id="roomDisplayName">–</b></div>
+      <div class="row"><span>Mã phòng</span><b id="roomCodeLive">–</b></div>
+      <div class="row"><span>Worker (NodeAgent)</span><b id="roomWorkers">–</b></div>
+      <div class="row"><span>Mật khẩu</span><b id="roomPwdStatus">–</b></div>
+      <label style="margin-top:8px">LAN</label>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <input type="text" id="inviteLan" readonly style="flex:1;font-size:11px">
+        <button type="button" class="ghost" onclick="copyField('inviteLan')">Copy</button>
+      </div>
+      <label>Tunnel</label>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <input type="text" id="inviteTunnel" readonly style="flex:1;font-size:11px"
+               placeholder="—">
+        <button type="button" class="ghost" onclick="copyField('inviteTunnel')">Copy</button>
+      </div>
+      <label>Máy khách (worker)</label>
+      <div style="display:flex;gap:6px;align-items:flex-start">
+        <input type="text" id="inviteWorker" readonly style="flex:1;font-size:11px"
+               placeholder="—">
+        <button type="button" class="ghost" onclick="copyField('inviteWorker')">Copy</button>
+      </div>
+      <p class="muted" style="font-size:11px">Mở link trên máy khách, rồi chạy NodeAgent.exe --setup với link đó. Link này chỉ hướng dẫn worker, không đăng nhập admin.</p>
+      <div style="margin-top:10px;text-align:center">
+        <img id="inviteQr" alt="QR mời" width="160" height="160"
+             style="background:#fff;border:1px solid #334;display:none">
+      </div>
+      <div id="copyStatus" role="status" aria-live="polite"></div>
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer">Đổi mật khẩu</summary>
+        <form onsubmit="return false" novalidate>
+        <label>Tên hiển thị</label>
+        <input type="text" id="bootName" placeholder="Tên phòng" autocomplete="username">
+        <label>Mật khẩu worker</label>
+        <div class="password-control">
+          <input type="password" id="bootWorker" autocomplete="new-password">
+          <button class="ghost password-toggle" type="button" aria-controls="bootWorker"
+                  aria-pressed="false" onclick="togglePassword('bootWorker', this)">Hiện</button>
+        </div>
+        <label>Mật khẩu admin</label>
+        <div class="password-control">
+          <input type="password" id="bootAdmin" autocomplete="new-password">
+          <button class="ghost password-toggle" type="button" aria-controls="bootAdmin"
+                  aria-pressed="false" onclick="togglePassword('bootAdmin', this)">Hiện</button>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" onclick="bootstrapRoom()">Lưu phòng</button>
+          <button type="button" class="ghost" onclick="closeRoom()">Đóng phòng</button>
+        </div>
+        </form>
+      </details>
+      </div>
+    </details>
+    <details class="panel disclosure-panel">
+      <summary>Tunnel <span class="muted">truy cập từ xa</span></summary>
+      <div class="disclosure-content">
+      <div class="row"><span>Trạng thái</span><b id="tunnelStatus">–</b></div>
+      <div class="row"><span>Lần dò mật khẩu (1h)</span><b id="authFail1h">–</b></div>
+      <div class="row"><span>Tổng lần dò</span><b id="authFailTotal">–</b></div>
+      <p class="muted" id="tunnelDetail" style="font-size:11px"></p>
+      <p class="muted" id="tunnelWarning" style="font-size:11px;color:#f0b27a;display:none"></p>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" id="btnTunnelOn" onclick="enableTunnel()">Bật tunnel</button>
+        <button type="button" class="ghost" id="btnTunnelOff" onclick="disableTunnel()">Tắt</button>
+      </div>
+      </div>
+    </details>
+    <div class="panel">
+      <h3>Ngưỡng cảnh báo</h3>
+      <div class="row">
+        <span>Orchestrate at (°C)</span>
+        <span><input type="number" id="thresh" min="40" max="100" step="1">
+        <button onclick="saveThreshold()">Save</button></span>
+      </div>
+      <p class="muted">Nodes predicted to exceed this within 3 minutes stop receiving new jobs.</p>
+    </div>
+    <div class="panel">
+      <h3>Mô hình chat LLM</h3>
+      <div class="row">
+        <span>Catalog</span>
+        <span>
+          <select id="llmModelSelect" style="max-width:220px"></select>
+          <button onclick="saveLlmModel()">Lưu</button>
+        </span>
+      </div>
+      <p class="muted" id="llmModelHint">Một phòng một model. Gemma ~3 GB — worker sẽ tải lại.</p>
+      <p class="muted" id="llmModelStatus" style="display:none;color:#f0b27a"></p>
+    </div>
+    <div class="panel chat-panel">
+      <h3>Chat phân tán</h3>
+      <textarea id="chatPrompt" placeholder="Nhập câu hỏi…"></textarea>
+      <div style="margin-top:8px; display:flex; gap:8px;">
+        <button id="chatSend" onclick="sendChat()" disabled aria-disabled="true">Gửi</button>
+        <button class="ghost" type="button" id="chatRetry" onclick="retryLastChat()" hidden>Gửi lại</button>
+        <button class="ghost" type="button" onclick="clearChatUi()">Xóa</button>
+      </div>
+      <div id="chatStatus" role="status" aria-live="polite"></div>
+      <div id="chatNode"></div>
+      <div id="chatOut" aria-live="polite" aria-atomic="false"></div>
+      <div id="chatHistory" role="log" aria-live="polite" aria-label="Lịch sử chat trong phiên"></div>
+    </div>
+  </aside>
+</main>
+</div>
+<script>
+const TOKEN_KEY = 'thermal_admin_token';
+const CHAT_DISCLOSE_KEY = 'thermal_chat_disclose_ok';
+const DASHBOARD_API_REVISION = '2026.08.03.3';
+const THEME_KEY = 'thermal_dashboard_theme';
+const CHART_WINDOW_MS = 15 * 60 * 1000;
+const MAX_CHART_POINTS = 180;
+const MAX_HISTORY_POINTS = MAX_CHART_POINTS * 4;
+const telemetryHistory = [];
+let threshEdited = false;
+let llmModelEdited = false;
+let ws = null;
+let chatPollTimer = null;
+let activeChatJobId = null;
+let activeChatAttemptId = null;
+let activeChatPrompt = null;
+let retryChatPrompt = null;
+let chatReady = false;
+let apiCompatible = false;
+let apiCompatibilityChecked = false;
+let lastState = null;
+const recentEvents = [];
+const eventState = {};
+const animatedChatJobs = new Set();
+document.getElementById('thresh').addEventListener('input', () => threshEdited = true);
+
+function getToken() { return sessionStorage.getItem(TOKEN_KEY); }
+function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t); }
+function clearToken() { sessionStorage.removeItem(TOKEN_KEY); }
+
+function applyTheme(theme) {
+  const dark = theme === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.querySelectorAll('.theme-toggle').forEach(toggle => {
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.setAttribute('aria-label', dark ? 'Bật giao diện sáng' : 'Bật giao diện tối');
+    const text = toggle.querySelector('.theme-toggle-text');
+    if (text) text.textContent = dark ? 'Giao diện sáng' : 'Giao diện tối';
+  });
+}
+
+function toggleTheme() {
+  const dark = document.documentElement.dataset.theme !== 'dark';
+  const theme = dark ? 'dark' : 'light';
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) {}
+  applyTheme(theme);
+}
+
+function initializeTheme() {
+  let theme = 'light';
+  try { theme = localStorage.getItem(THEME_KEY) || 'light'; } catch (e) {}
+  applyTheme(theme === 'dark' ? 'dark' : 'light');
+}
+
+function showRuntimeNotice(message) {
+  const notice = document.getElementById('runtimeNotice');
+  if (!notice) return;
+  notice.hidden = !message;
+  notice.textContent = message || '';
+}
+
+async function verifyApiRevision() {
+  try {
+    const response = await fetch("/api/version");
+    const payload = await response.json();
+    apiCompatible = response.ok
+      && payload.api_revision === DASHBOARD_API_REVISION;
+    apiCompatibilityChecked = true;
+    if (!apiCompatible) {
+      showRuntimeNotice('Host cần khởi động lại: dashboard và backend không cùng phiên bản.');
+    } else {
+      showRuntimeNotice('');
+    }
+  } catch (error) {
+    apiCompatible = false;
+    apiCompatibilityChecked = true;
+    showRuntimeNotice('Không kiểm tra được Host. Hãy khởi động Thermal Orchestrator rồi thử lại.');
+  }
+  return apiCompatible;
+}
+
+function hostApiAvailable() {
+  if (apiCompatible) return true;
+  if (apiCompatibilityChecked) {
+    showRuntimeNotice('Host cần khởi động lại: dashboard và backend không cùng phiên bản.');
+  } else {
+    showRuntimeNotice('Đang kiểm tra phiên bản Host…');
+  }
+  return false;
+}
+
+function togglePassword(inputId, button) {
+  const input = document.getElementById(inputId);
+  if (!input || !button) return;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  button.textContent = show ? 'Ẩn' : 'Hiện';
+  button.setAttribute('aria-pressed', String(show));
+  button.setAttribute('aria-label', (show ? 'Ẩn' : 'Hiện') + ' mật khẩu');
+}
+
+function localAgentCopy(local) {
+  const state = local && local.state;
+  const message = local && local.message;
+  const labels = {
+    missing: 'Host agent chưa được cài đặt hoặc chưa tìm thấy.',
+    starting: 'Đang khởi động Host agent…',
+    awaiting_uac: 'Cần xác nhận UAC để Host agent đọc cảm biến.',
+    joining: 'Host agent đang tham gia phòng…',
+    downloading_model: 'Host agent đang tải hoặc khởi động model…',
+    ready: 'Host agent đã sẵn sàng; đang chờ telemetry đầu tiên.',
+    error: 'Không thể khởi động Host agent.',
+  };
+  return message || labels[state] || 'Đang chờ Host agent gửi telemetry đầu tiên.';
+}
+
+function renderLocalAgentState(local, nodeCount) {
+  const empty = document.getElementById('hostEmpty');
+  const message = document.getElementById('hostEmptyMessage');
+  const retry = document.getElementById('retryLocalAgent');
+  if (!empty || !message || !retry) return;
+  const state = local && local.state;
+  empty.hidden = nodeCount > 0;
+  message.textContent = localAgentCopy(local);
+  retry.hidden = !(state === 'missing' || state === 'error' || state === 'awaiting_uac');
+  retry.disabled = state === 'starting' || state === 'joining';
+  const health = document.getElementById('healthHost');
+  if (health) health.textContent = state === 'ready' ? 'READY'
+    : (state ? statusLabel(state.toUpperCase()) : 'Chờ cấu hình');
+}
+
+function updateChatAvailability() {
+  const button = document.getElementById('chatSend');
+  if (!button) return;
+  const sending = button.dataset.sending === 'true';
+  button.disabled = sending || !chatReady;
+  button.setAttribute('aria-disabled', String(button.disabled));
+  const status = document.getElementById('chatStatus');
+  if (!sending && !chatReady && !activeChatJobId && status) {
+    status.textContent = 'Chờ một node sẵn sàng với đúng model đã chọn.';
+  }
+}
+
+function appendChatHistory(kind, text, detail) {
+  if (!text) return;
+  const history = document.getElementById('chatHistory');
+  if (!history) return;
+  const item = document.createElement('article');
+  item.className = 'chat-history-item' + (kind === 'error' ? ' error' : '');
+  const meta = document.createElement('div');
+  meta.className = 'chat-history-meta';
+  meta.textContent = detail || (kind === 'assistant' ? 'Trợ lý' : 'Bạn');
+  const body = document.createElement('div');
+  body.className = 'chat-history-text';
+  body.textContent = text;
+  item.append(meta, body);
+  history.prepend(item);
+  while (history.children.length > 8) history.lastElementChild.remove();
+}
+
+function retryLastChat() {
+  if (!retryChatPrompt) return;
+  document.getElementById('chatPrompt').value = retryChatPrompt;
+  sendChat();
+}
+
+function authHeaders(extra) {
+  const h = Object.assign({'Content-Type': 'application/json'}, extra || {});
+  const t = getToken();
+  if (t) h['Authorization'] = 'Bearer ' + t;
+  return h;
+}
+
+function tempColor(t) {
+  if (t == null) return '#2c3440';
+  const clamped = Math.min(Math.max(t, 35), 90);
+  const hue = 120 - (clamped - 35) * (120 / 55);
+  return `hsl(${hue} 65% 30%)`;
+}
+function fmt(v, unit, d=1) { return v == null ? 'n/a' : v.toFixed(d) + unit; }
+function fmtDecision(v) { return v == null ? 'n/a' : Number(v).toFixed(1).replace('.', ',') + '°C'; }
+function statusLabel(st) {
+  if (st === 'AT_RISK') return 'AT RISK';
+  if (st === 'STALE' || st === 'OFFLINE' || st === 'INACTIVE') return 'OFFLINE';
+  if (st === 'READY' || st === 'OK') return 'OK';
+  return 'WARMING UP';
+}
+function statusClass(st) {
+  if (st === 'AT_RISK') return 'flagged';
+  if (st === 'STALE' || st === 'OFFLINE' || st === 'INACTIVE') return 'stale';
+  if (st === 'READY' || st === 'OK') return 'ok';
+  return 'warming';
+}
+function decisionReason(n) {
+  if ((n.flagged || n.state === 'AT_RISK') && n.predicted_max != null
+      && n.decision_threshold_c != null)
+    return `Dự báo ${fmtDecision(n.predicted_max)} ≥ ngưỡng ${fmtDecision(n.decision_threshold_c)}`;
+  return '';
+}
+function setNodeMetric(card, key, value, available) {
+  const metric = card.querySelector(`[data-k="${key}"]`);
+  if (!metric) return;
+  metric.hidden = !available;
+  metric.textContent = available ? value : '';
+}
+function addActivity(text) {
+  recentEvents.unshift(text);
+  recentEvents.splice(5);
+  const feed = document.getElementById('activityFeed');
+  if (!feed) return;
+  feed.replaceChildren(...recentEvents.map(x => {
+    const row = document.createElement('div');
+    row.textContent = x;
+    return row;
+  }));
+}
+function applyNodeEvent(msg) {
+  if (!msg || msg.type !== 'node_event' || !msg.node) return;
+  eventState[msg.node] = msg;
+  const el = document.getElementById('node-' + msg.node);
+  if (el) {
+    const risk = msg.event === 'flagged' || msg.state === 'AT_RISK';
+    el.classList.toggle('risk', risk);
+    el.classList.toggle('cleared', msg.event === 'cleared');
+    if (msg.event === 'left' || msg.state === 'OFFLINE' || msg.state === 'STALE') {
+      el.style.background = tempColor(null);
+      for (const metric of el.querySelectorAll('.metric')) {
+        metric.textContent = '';
+        metric.hidden = true;
+      }
+      const reason = el.querySelector('[data-k=reason]');
+      if (reason) {
+        reason.textContent = '';
+        reason.hidden = true;
+      }
+      el.dataset.offline = 'true';
+    } else if (msg.event !== 'left') {
+      delete el.dataset.offline;
+    }
+    const badge = el.querySelector('.badge');
+    if (badge) {
+      badge.textContent = statusLabel(msg.state);
+      badge.className = 'badge ' + statusClass(msg.state);
+    }
+    const reasonEl = el.querySelector('[data-k=reason]');
+    if (reasonEl) {
+      reasonEl.hidden = !(msg.event === 'flagged' && msg.predicted_max != null);
+      reasonEl.textContent = (msg.event === 'flagged' && msg.predicted_max != null)
+        ? `Dự báo ${fmtDecision(msg.predicted_max)} ≥ ngưỡng ${fmtDecision(msg.decision_threshold_c)}`
+        : '';
+    }
+    if (msg.event === 'cleared') setTimeout(() => el.classList.remove('cleared'), 1500);
+  }
+  const label = msg.event === 'flagged' ? 'Cảnh báo' : (msg.event === 'cleared' ? 'Đã xử lý' : 'Cập nhật');
+  addActivity(`${label} ${msg.node}: ${statusLabel(msg.state)}${msg.reason ? ' — ' + msg.reason : ''}`);
+}
+
+function pruneTelemetryHistory(now = Date.now()) {
+  const cutoff = now - CHART_WINDOW_MS;
+  while (telemetryHistory.length && telemetryHistory[0].at < cutoff)
+    telemetryHistory.shift();
+  while (telemetryHistory.length > MAX_HISTORY_POINTS)
+    telemetryHistory.shift();
+}
+
+function downsampleTelemetryHistory(points, maxPoints = MAX_CHART_POINTS) {
+  if (points.length <= maxPoints) return points;
+  const step = (points.length - 1) / (maxPoints - 1);
+  const sampled = [];
+  for (let i = 0; i < maxPoints; i += 1)
+    sampled.push(points[Math.round(i * step)]);
+  return sampled;
+}
+
+function recordTelemetrySnapshot(nodes, threshold) {
+  const at = Date.now();
+  telemetryHistory.push({
+    at,
+    threshold: Number.isFinite(Number(threshold)) ? Number(threshold) : null,
+    nodes: (nodes || []).filter(n => n && n.cpu_temp != null).map(n => ({
+      name: String(n.name || 'node'),
+      cpu: Number(n.cpu_temp),
+      predicted: n.predicted_max == null ? null : Number(n.predicted_max),
+      state: n.state || '',
+    })),
+  });
+  pruneTelemetryHistory(at);
+}
+
+function renderTelemetryChart() {
+  const svg = document.getElementById('telemetryChart');
+  const empty = document.getElementById('chartEmptyState');
+  const summary = document.getElementById('chartSummary');
+  const readout = document.getElementById('chartReadout');
+  if (!svg || !empty || !summary || !readout) return;
+  pruneTelemetryHistory();
+  const points = downsampleTelemetryHistory(telemetryHistory);
+  const usable = points.filter(p => p.nodes && p.nodes.length);
+  if (!usable.length) {
+    svg.hidden = true;
+    empty.hidden = false;
+    readout.textContent = 'Chờ telemetry';
+    summary.textContent = 'Chưa có dữ liệu nhiệt độ trong phiên trình duyệt này.';
+    return;
+  }
+  empty.hidden = true;
+  svg.hidden = false;
+  const width = 760, height = 250, pad = {left:42, right:18, top:18, bottom:30};
+  const allTemps = usable.flatMap(p => p.nodes.flatMap(n => [n.cpu, n.predicted]))
+    .filter(Number.isFinite);
+  const thresholds = usable.map(p => p.threshold).filter(Number.isFinite);
+  const low = Math.floor((Math.min(...allTemps, ...thresholds, 40) - 4) / 5) * 5;
+  const high = Math.ceil((Math.max(...allTemps, ...thresholds, 75) + 4) / 5) * 5;
+  const x = at => pad.left + (at - (Date.now() - CHART_WINDOW_MS)) / CHART_WINDOW_MS
+    * (width - pad.left - pad.right);
+  const y = value => pad.top + (high - value) / (high - low || 1) * (height - pad.top - pad.bottom);
+  const palette = ['#0969a8','#7c3aed','#008a6e','#c2410c','#be185d','#0f766e'];
+  const series = new Map();
+  usable.forEach(point => point.nodes.forEach(node => {
+    if (!series.has(node.name)) series.set(node.name, []);
+    series.get(node.name).push({at:point.at, cpu:node.cpu, predicted:node.predicted});
+  }));
+  const grid = [low, low + (high - low) / 2, high].map(value =>
+    `<path d="M${pad.left} ${y(value).toFixed(1)}H${width-pad.right}" stroke="#d7e0eb" stroke-width="1"/><text x="${pad.left-7}" y="${(y(value)+4).toFixed(1)}" text-anchor="end" fill="#526176" font-size="10">${value.toFixed(0)}°</text>`).join('');
+  const lastThreshold = thresholds.at(-1);
+  const thresholdLine = Number.isFinite(lastThreshold)
+    ? `<path d="M${pad.left} ${y(lastThreshold).toFixed(1)}H${width-pad.right}" stroke="#b4232d" stroke-width="1.5" stroke-dasharray="5 4"/><text x="${width-pad.right}" y="${(y(lastThreshold)-5).toFixed(1)}" text-anchor="end" fill="#b4232d" font-size="10">ngưỡng ${lastThreshold.toFixed(0)}°C</text>` : '';
+  const lines = [...series.entries()].map(([name, values], index) => {
+    const color = palette[index % palette.length];
+    const measured = values.filter(v => Number.isFinite(v.cpu)).map(v => `${x(v.at).toFixed(1)},${y(v.cpu).toFixed(1)}`).join(' ');
+    const last = values.at(-1);
+    const forecast = last && Number.isFinite(last.predicted)
+      ? `<path d="M${x(last.at).toFixed(1)} ${y(last.cpu).toFixed(1)}L${x(Math.min(last.at + 3*60*1000, Date.now()+3*60*1000)).toFixed(1)} ${y(last.predicted).toFixed(1)}" fill="none" stroke="${color}" stroke-width="2" stroke-dasharray="5 4"/>` : '';
+    return `<polyline points="${measured}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>${forecast}`;
+  }).join('');
+  svg.innerHTML = `${grid}${thresholdLine}${lines}<text x="${pad.left}" y="${height-8}" fill="#526176" font-size="10">15 phút trước</text><text x="${width-pad.right}" y="${height-8}" text-anchor="end" fill="#526176" font-size="10">bây giờ</text>`;
+  const latest = usable.at(-1);
+  const report = latest.nodes.map(n => `${n.name} ${n.cpu.toFixed(1)}°C`).join(', ');
+  readout.textContent = report || 'Chờ telemetry';
+  summary.textContent = `Biểu đồ 15 phút trong phiên này. ${report}. ${Number.isFinite(lastThreshold) ? `Ngưỡng quyết định ${lastThreshold.toFixed(0)}°C.` : ''}`;
+}
+
+function render(s) {
+  lastState = s;
+  document.getElementById('forecastBadge').textContent =
+    'nhiệt: ' + (s.model_loaded ? 'RF' : 'fallback dự phòng');
+  const chatLabel = s.llm_model_display || s.llm_model_id || '…';
+  document.getElementById('chatModelBadge').textContent = 'chat: ' + chatLabel;
+  if (s.llm_model_id && !llmModelEdited
+      && document.getElementById('llmModelSelect').options.length)
+    document.getElementById('llmModelSelect').value = s.llm_model_id;
+  document.getElementById('qlen').textContent = 'hàng đợi: ' + s.queue_len;
+  document.getElementById('healthQueue').textContent = String(s.queue_len || 0);
+  const wrap = document.getElementById('nodes');
+  const alerts = [];
+  const nodes = s.nodes || [];
+  const present = new Set(nodes.map(n => n.name));
+  for (const el of [...wrap.children]) {
+    const nm = el.id && el.id.startsWith('node-') ? el.id.slice(5) : null;
+    if (nm && !present.has(nm)) el.remove();
+  }
+  for (const n of nodes) {
+    let el = document.getElementById('node-' + n.name);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'node'; el.id = 'node-' + n.name;
+      el.tabIndex = 0;
+      el.innerHTML = `<span class="badge"></span><h2></h2>
+        <div class="node-hero"><div class="temp-reading" data-k="cpu"></div>
+        <div class="forecast-reading" data-k="pred"></div></div>
+        <div class="safety-bar" aria-label="Khoảng an toàn so với ngưỡng"><span data-k="safety"></span></div>
+        <div class="metric-grid"><div class="metric" data-k="gpu"></div>
+        <div class="metric" data-k="util"></div><div class="metric" data-k="pow"></div>
+        <div class="metric" data-k="jobs"></div><div class="metric" data-k="state"></div></div>
+        <div class="decision-reason" data-k="reason"></div>`;
+      wrap.appendChild(el);
+    }
+    el.querySelector('h2').textContent = 'Máy · ' + n.name;
+    const badge = el.querySelector('.badge');
+    if (eventState[n.name]?.event === 'flagged' && n.state !== 'AT_RISK')
+      delete eventState[n.name];
+    delete el.dataset.offline;
+    const st = (eventState[n.name] && eventState[n.name].event === 'flagged')
+      ? 'AT_RISK' : (n.state || (n.stale ? 'STALE' : (n.flagged ? 'AT_RISK' : 'READY')));
+    badge.textContent = statusLabel(st);
+    badge.className = 'badge ' + statusClass(st);
+    el.classList.toggle('risk', st === 'AT_RISK');
+    if (st !== 'AT_RISK') el.classList.remove('cleared');
+    const live = st !== 'STALE' && st !== 'OFFLINE' && st !== 'INACTIVE';
+    setNodeMetric(el, 'cpu', fmt(n.cpu_temp, '°C') + '<small>nhiệt CPU hiện tại</small>', live && n.cpu_temp != null);
+    const cpuMetric = el.querySelector('[data-k="cpu"]');
+    if (cpuMetric && !cpuMetric.hidden) cpuMetric.innerHTML = fmt(n.cpu_temp, '°C') + '<small>nhiệt CPU hiện tại</small>';
+    setNodeMetric(el, 'gpu', 'GPU temp: ' + fmt(n.gpu_temp, '°C'), live && n.gpu_temp != null);
+    setNodeMetric(el, 'util', 'CPU util: ' + fmt(n.cpu_util, '%', 0), live && n.cpu_util != null);
+    setNodeMetric(el, 'pow', 'Power: ' + fmt(n.power_w, ' W'), live && n.power_w != null);
+    const dT = n.delta_t != null ? ` (ΔT ${n.delta_t >= 0 ? '+' : ''}${n.delta_t.toFixed(1)}°C)` : '';
+    setNodeMetric(el, 'pred', fmt(n.predicted_max, '°C') + '<span>dự báo 3 phút' + dT + '</span>',
+      live && n.predicted_max != null);
+    const predMetric = el.querySelector('[data-k="pred"]');
+    if (predMetric && !predMetric.hidden) predMetric.innerHTML = fmt(n.predicted_max, '°C')
+      + '<span>dự báo 3 phút' + dT + '</span>';
+    const safety = el.querySelector('[data-k="safety"]');
+    const safetyGap = n.decision_threshold_c != null && n.predicted_max != null
+      ? n.decision_threshold_c - n.predicted_max : null;
+    if (safety) {
+      safety.parentElement.hidden = !live || safetyGap == null;
+      if (safetyGap != null) {
+        safety.style.width = Math.max(5, Math.min(100, (safetyGap + 15) / 30 * 100)) + '%';
+        safety.style.background = safetyGap <= 0 ? 'var(--danger)' : (safetyGap < 5 ? 'var(--warn)' : 'var(--good)');
+        safety.parentElement.setAttribute('aria-label', (safetyGap >= 0 ? 'Còn ' : 'Vượt ')
+          + Math.abs(safetyGap).toFixed(1) + ' độ C so với ngưỡng quyết định');
+      }
+    }
+    setNodeMetric(el, 'jobs', 'Jobs received: ' + n.dispatched,
+      live && n.dispatched != null && n.dispatched > 0);
+    setNodeMetric(el, 'state', '', false);
+    const decision = decisionReason(n);
+    const reason = el.querySelector('[data-k=reason]');
+    reason.hidden = !decision;
+    reason.textContent = decision;
+    if (n.flagged || st === 'AT_RISK')
+      alerts.push(`Cảnh báo · ${n.name}: ${decisionReason(n)} — yêu cầu mới chuyển máy khác`);
+  }
+  renderLocalAgentState(s.local_agent, nodes.length);
+  recordTelemetrySnapshot(nodes, s.threshold_c);
+  renderTelemetryChart();
+  document.getElementById('healthNodes').textContent = String(nodes.length);
+  if (!recentEvents.length) {
+    const feed = document.getElementById('activityFeed');
+    if (feed) feed.textContent = 'Chưa có quyết định điều phối';
+  }
+  const readiness = s.llm_readiness;
+  if (readiness) {
+    const selected = readiness.selected_model_id || s.llm_model_id;
+    chatReady = !!readiness.ready && selected === s.llm_model_id;
+  } else {
+    chatReady = nodes.some(n => (n.state === 'READY' || n.state === 'OK')
+      && n.model_ready !== false);
+  }
+  document.getElementById('healthLlm').textContent = chatReady
+    ? 'READY · đúng model' : 'Chưa sẵn sàng';
+  updateChatAvailability();
+  document.getElementById('alerts').textContent = alerts.join('   ');
+  const t = document.getElementById('thresh');
+  if (!threshEdited) t.value = s.threshold_c;
+  if (s.esg) {
+    const t1 = s.esg.tier1_measured || {};
+    const t2 = s.esg.tier2_derived || {};
+    const t3 = s.esg.tier3_projected || {};
+    const conf = t1.confidence || '–';
+    const badge = document.getElementById('esgConfBadge');
+    badge.textContent = conf;
+    badge.className = 'esg-badge ' + (conf === 'ok' ? 'ok'
+      : conf === 'sơ bộ' ? 'warn' : '');
+    const jptEl = document.getElementById('esgJpt');
+    jptEl.textContent = t1.j_per_token == null ? '–'
+      : Number(t1.j_per_token).toFixed(3) + ' J';
+    document.getElementById('esgJptRow').classList.toggle(
+      'esg-dim', conf === 'chưa đủ dữ liệu');
+    const insufficientMeasured = conf === 'chưa đủ dữ liệu';
+    document.querySelectorAll('#esgBlock1 .row').forEach(row => {
+      row.hidden = insufficientMeasured;
+    });
+    document.getElementById('esgBlock2').hidden = insufficientMeasured;
+    document.getElementById('esgBlock3').hidden = insufficientMeasured;
+    document.getElementById('esgProjectedRows').hidden = insufficientMeasured;
+    document.getElementById('esgProjectedUnavailable').hidden = !insufficientMeasured;
+    document.getElementById('esgJptBase').textContent =
+      t1.j_per_token_baseline == null ? '–'
+        : Number(t1.j_per_token_baseline).toFixed(3) + ' J';
+    if (t1.improvement_pct == null) {
+      document.getElementById('esgImpr').textContent =
+        conf === 'chưa đủ dữ liệu' ? '(ẩn — thiếu mẫu)' : '–';
+    } else {
+      const pct = Number(t1.improvement_pct);
+      document.getElementById('esgImpr').textContent =
+        (pct >= 0 ? '↓' : '↑') + Math.abs(pct).toFixed(1) + '%';
+    }
+    document.getElementById('esgThrottle').textContent =
+      t1.throttle_seconds_avoided == null ? 'không khả dụng'
+        : Number(t1.throttle_seconds_avoided).toFixed(1) + ' s';
+    const med = t1.latency_median_ms;
+    const baseMed = t1.latency_median_baseline_ms;
+    document.getElementById('esgLatMed').textContent =
+      med == null ? '–'
+        : (Number(med) / 1000).toFixed(1) + ' s'
+          + (baseMed != null ? ' (mốc: ' + (Number(baseMed) / 1000).toFixed(1) + ' s)' : '');
+    document.getElementById('esgT1Note').textContent = '';
+
+    const ass = t2.assumptions || [];
+    document.getElementById('esgLeak').textContent =
+      fmt(t2.kwh_leakage_saved, ' kWh', 4);
+    document.getElementById('esgFan').textContent =
+      fmt(t2.kwh_fan_saved, ' kWh', 4);
+    document.getElementById('esgCool').textContent =
+      fmt(t2.kwh_cooling_saved, ' kWh', 4);
+    document.getElementById('esgAssumpLeak').textContent =
+      ass.find(a => a.includes('rò')) || '';
+    document.getElementById('esgAssumpFan').textContent =
+      ass.find(a => a.toLowerCase().includes('quạt')) || '';
+    document.getElementById('esgAssumpCool').textContent =
+      ass.find(a => a.includes('làm mát')) || '';
+
+    document.getElementById('esgScaleNote').textContent =
+      t3.scale_note || '';
+    document.getElementById('esgKwhMeas').textContent =
+      fmt(t3.kwh_projected_measured, ' kWh', 1);
+    document.getElementById('esgVndMeas').textContent =
+      t3.vnd_projected_measured == null ? '–'
+        : Number(t3.vnd_projected_measured).toFixed(0) + ' ₫';
+    document.getElementById('esgCo2Meas').textContent =
+      fmt(t3.co2_kg_projected_measured, ' kg', 1);
+    document.getElementById('esgTier3LabelMeas').textContent =
+      t3.label_measured || '';
+    document.getElementById('esgKwhDer').textContent =
+      fmt(t3.kwh_projected_derived, ' kWh', 1);
+    document.getElementById('esgVndDer').textContent =
+      t3.vnd_projected_derived == null ? '–'
+        : Number(t3.vnd_projected_derived).toFixed(0) + ' ₫';
+    document.getElementById('esgCo2Der').textContent =
+      fmt(t3.co2_kg_projected_derived, ' kg', 1);
+    document.getElementById('esgTier3LabelDer').textContent =
+      t3.label_derived || '';
+
+    const seg = s.esg.segments;
+    const segEl = document.getElementById('esgSegNote');
+    if (seg && seg.length >= 2) {
+      segEl.hidden = false;
+      segEl.textContent = 'Ngưỡng đổi giữa kỳ — đang xem khoảng '
+        + seg[seg.length - 1].threshold_c + '°C ('
+        + seg.length + ' khoảng tách biệt, không cộng gộp).';
+    } else {
+      segEl.hidden = true;
+    }
+  }
+  if (s.tunnel) {
+    const tn = s.tunnel;
+    document.getElementById('tunnelStatus').textContent =
+      tn.state || (tn.enabled ? 'sẵn sàng' : 'tắt');
+    document.getElementById('tunnelDetail').textContent =
+      tn.public_url || tn.error || tn.last_error || '';
+    const warn = document.getElementById('tunnelWarning');
+    if (tn.enabled && (tn.warning || s.tunnel_warning)) {
+      warn.style.display = 'block';
+      warn.textContent = 'Cảnh báo · ' + (tn.warning || '');
+    } else {
+      warn.style.display = 'none';
+    }
+    document.getElementById('btnTunnelOn').disabled = s.allow_tunnel === false;
+  }
+  if (typeof s.auth_failures_1h !== 'undefined') {
+    document.getElementById('authFail1h').textContent = s.auth_failures_1h;
+    document.getElementById('authFailTotal').textContent =
+      s.auth_failures_total;
+  }
+  if (s.room) {
+    const rm = s.room;
+    document.getElementById('roomDisplayName').textContent =
+      rm.display_name || '(chưa đặt tên)';
+    document.getElementById('roomCodeLive').textContent = rm.code || '–';
+    const wc = rm.worker_count != null ? rm.worker_count : 0;
+    let wtxt = wc + ' / ' + (rm.capacity || 10);
+    if (wc === 0) wtxt += ' · Chưa có agent';
+    document.getElementById('roomWorkers').textContent = wtxt;
+    let pwd = rm.password_set ? 'đã đặt' : 'chưa đặt';
+    if (rm.tunnel_ready) pwd += ' · tunnel OK';
+    else if (rm.password_set) pwd += ' · tunnel cần ≥12';
+    document.getElementById('roomPwdStatus').textContent = pwd;
+    document.getElementById('inviteLan').value = rm.invite_lan || '';
+    document.getElementById('inviteTunnel').value = rm.invite_tunnel || '';
+    document.getElementById('inviteWorker').value = rm.worker_setup_tunnel
+      || rm.worker_setup_lan || '';
+    const bootName = document.getElementById('bootName');
+    if (bootName && rm.display_name
+        && document.activeElement !== bootName) {
+      bootName.value = rm.display_name;
+    }
+    const reopenHdr = document.getElementById('btnHeaderReopen');
+    if (reopenHdr) reopenHdr.style.display = isLoopbackHost() ? '' : 'none';
+  }
+  if (s.weather) {
+    const sites = Object.keys(s.weather);
+    const sid = s.site_id || sites[0];
+    const w = sid && s.weather[sid] ? s.weather[sid]
+      : (sites[0] ? s.weather[sites[0]] : null);
+    if (w) {
+      document.getElementById('weatherTemp').textContent =
+        fmt(w.temp_c, ' °C', 1) + ' (môi trường)';
+      document.getElementById('weatherFeels').textContent =
+        fmt(w.feels_like_c, ' °C', 1);
+      document.getElementById('weatherSite').textContent =
+        w.label || sid;
+      document.getElementById('weatherDetail').textContent =
+        w.updated_at ? 'Cập nhật ' + new Date(w.updated_at * 1000).toLocaleString() : '';
+    } else {
+      document.getElementById('weatherTemp').textContent = 'không có dữ liệu';
+      document.getElementById('weatherDetail').textContent =
+        '';
+    }
+  }
+}
+
+async function enableTunnel() {
+  const msg = 'Bật tunnel sẽ đưa phòng này ra Internet công cộng.\n'
+    + 'Bất kỳ ai có đường link đều có thể thử mật khẩu.\n'
+    + '• Dùng mật khẩu mạnh (≥12 ký tự)\n'
+    + '• Tắt tunnel khi không dùng\n'
+    + '• Trong cùng mạng LAN thì KHÔNG cần tunnel';
+  if (!confirm(msg)) return;
+  const r = await fetch('/api/tunnel/enable', {
+    method: 'POST', headers: authHeaders()});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    alert((j.error && j.error.message) || ('HTTP ' + r.status));
+    return;
+  }
+  if (j.warning) alert('Cảnh báo · ' + j.warning);
+  refreshInviteQr();
+}
+
+function copyField(id) {
+  const el = document.getElementById(id);
+  if (!el || !el.value) { alert('Chưa có link để copy'); return; }
+  const status = document.getElementById('copyStatus');
+  const fallback = () => {
+    el.focus();
+    el.select();
+    const copied = typeof document.execCommand === 'function'
+      && document.execCommand('copy');
+    if (status) status.textContent = copied ? 'Đã sao chép link.' : 'Không thể sao chép; hãy chọn và copy thủ công.';
+  };
+  if (!navigator.clipboard || typeof navigator.clipboard.writeText !== 'function') {
+    fallback();
+    return;
+  }
+  navigator.clipboard.writeText(el.value).then(
+    () => { if (status) status.textContent = 'Đã sao chép link.'; },
+    fallback,
+  );
+}
+
+async function retryLocalAgent(withCredentials = false) {
+  const button = document.getElementById('retryLocalAgent');
+  const message = document.getElementById('hostEmptyMessage');
+  const credentials = document.getElementById('hostAgentCredentials');
+  const password = document.getElementById('hostAgentWorker');
+  if (button) button.disabled = true;
+  if (message) message.textContent = 'Đang yêu cầu khởi động lại Host agent…';
+  const options = {method: 'POST', headers: authHeaders()};
+  if (withCredentials) {
+    if (!password || !password.value) {
+      if (message) message.textContent = 'Nhập mật khẩu worker để cấp lại Host agent.';
+      if (button) button.disabled = false;
+      return;
+    }
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify({worker_password: password.value});
+  }
+  try {
+    const r = await fetch('/api/local-agent/start', options);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (j.error && j.error.code === 'LOCAL_AGENT_CREDENTIALS_UNAVAILABLE') {
+        if (credentials) credentials.hidden = false;
+        if (message) message.textContent = 'Nhập mật khẩu worker một lần để cấp lại Host agent.';
+        return;
+      }
+      throw new Error(apiErrMessage(j, r.status));
+    }
+    if (password) password.value = '';
+    if (credentials) credentials.hidden = true;
+    if (lastState) render({...lastState, local_agent: j.local_agent || j});
+  } catch (e) {
+    if (message) message.textContent = e.message || 'Không thể yêu cầu khởi động Host agent.';
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function refreshInviteQr() {
+  try {
+    const r = await fetch('/api/room/invite', {headers: authHeaders()});
+    if (!r.ok) return;
+    const j = await r.json();
+    const img = document.getElementById('inviteQr');
+    if (j.qr_svg_data_url) {
+      img.src = j.qr_svg_data_url;
+      img.style.display = 'inline-block';
+    }
+    if (j.room) {
+      document.getElementById('inviteLan').value = j.room.invite_lan || '';
+      document.getElementById('inviteTunnel').value = j.room.invite_tunnel || '';
+      document.getElementById('inviteWorker').value = j.room.worker_setup_tunnel
+        || j.room.worker_setup_lan || '';
+    }
+  } catch (e) { /* bỏ qua */ }
+}
+
+async function bootstrapRoom() {
+  const admin_password = document.getElementById('bootAdmin').value;
+  const body = {
+    display_name: document.getElementById('bootName').value.trim(),
+    worker_password: document.getElementById('bootWorker').value,
+    admin_password,
+    regenerate_code: false,
+  };
+  if (!body.worker_password || !body.admin_password) {
+    alert('Nhập đủ mật khẩu worker và admin');
+    return;
+  }
+  const r = await fetch('/api/room/bootstrap', {
+    method: 'POST',
+    headers: {...authHeaders(), 'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    alert((j.error && j.error.message) || ('HTTP ' + r.status));
+    return;
+  }
+  const code = j.room && j.room.code;
+  document.getElementById('bootWorker').value = '';
+  document.getElementById('bootAdmin').value = '';
+  if (j.room) {
+    document.getElementById('roomDisplayName').textContent =
+      j.room.display_name || '(chưa đặt tên)';
+    document.getElementById('roomCodeLive').textContent = code || '–';
+    document.getElementById('bootName').value = j.room.display_name || '';
+    document.getElementById('inviteLan').value = j.room.invite_lan || '';
+    document.getElementById('inviteTunnel').value = j.room.invite_tunnel || '';
+  }
+  try {
+    // Đổi mật khẩu thu hồi token — join lại ngay bằng MK admin vừa đặt.
+    await adminJoin(code, admin_password);
+    await refreshInviteQr();
+  } catch (e) {
+    alert(e.message || 'Đã lưu nhưng đăng nhập lại thất bại — dùng Tham gia link.');
+    doLogout();
+    showLandingTab('join');
+  }
+}
+
+async function closeRoom() {
+  if (!confirm('Đóng phòng sẽ thu hồi mọi token và tắt tunnel. Tiếp tục?')) {
+    return;
+  }
+  const r = await fetch('/api/room/close', {
+    method: 'POST', headers: authHeaders()});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    alert((j.error && j.error.message) || ('HTTP ' + r.status));
+    return;
+  }
+  alert('Đã đóng phòng. Đăng nhập lại sau khi bootstrap.');
+  doLogout();
+}
+
+async function disableTunnel() {
+  await fetch('/api/tunnel/disable', {
+    method: 'POST', headers: authHeaders()});
+}
+
+function animateDot(targetEl) {
+  const map = document.getElementById('map');
+  const gen = document.getElementById('gen').getBoundingClientRect();
+  const tgt = targetEl.getBoundingClientRect();
+  const box = map.getBoundingClientRect();
+  const dot = document.createElement('div');
+  dot.className = 'dot';
+  const startX = gen.right - box.left - 8;
+  const startY = gen.top + gen.height / 2 - box.top;
+  dot.style.setProperty('--dot-x', startX + 'px');
+  dot.style.setProperty('--dot-y', startY + 'px');
+  map.appendChild(dot);
+  requestAnimationFrame(() => {
+    dot.style.setProperty('--dot-x', (tgt.left - box.left + tgt.width / 2) + 'px');
+    dot.style.setProperty('--dot-y', (tgt.top - box.top + tgt.height / 2) + 'px');
+  });
+  setTimeout(() => dot.remove(), 1400);
+}
+
+async function saveThreshold() {
+  const v = parseFloat(document.getElementById('thresh').value);
+  const r = await fetch('/api/settings', {method:'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({threshold_c: v})});
+  if (r.ok) threshEdited = false;
+  else {
+    const j = await r.json().catch(() => ({}));
+    alert((j.error && j.error.message) || 'Không lưu được ngưỡng');
+  }
+}
+
+async function loadLlmCatalog() {
+  const r = await fetch('/api/models', {headers: authHeaders()});
+  const st = document.getElementById('llmModelStatus');
+  if (!r.ok) {
+    if (st) {
+      st.style.display = 'block';
+      st.textContent = 'Không tải được catalog model (HTTP ' + r.status
+        + '). Thử restart server rồi refresh trang.';
+    }
+    return;
+  }
+  const data = await r.json();
+  const sel = document.getElementById('llmModelSelect');
+  sel.innerHTML = '';
+  for (const m of (data.models || [])) {
+    const opt = document.createElement('option');
+    opt.value = m.model_id;
+    const gb = m.approx_size_gb != null ? ` (~${m.approx_size_gb} GB)` : '';
+    opt.textContent = `${m.display}${gb}`;
+    sel.appendChild(opt);
+  }
+  if (data.selected) sel.value = data.selected;
+  if (st) { st.style.display = 'none'; st.textContent = ''; }
+  sel.onchange = () => {
+    llmModelEdited = true;
+    const opt = sel.selectedOptions[0];
+    const hint = document.getElementById('llmModelHint');
+    if (opt && opt.value.indexOf('gemma') >= 0)
+      hint.textContent = 'Gemma ~3 GB — lần đầu worker tải lâu. Một phòng một model.';
+    else
+      hint.textContent = 'Một phòng một model. Worker tải GGUF khớp lựa chọn.';
+  };
+}
+
+async function saveLlmModel() {
+  const mid = document.getElementById('llmModelSelect').value;
+  const r = await fetch('/api/settings', {method:'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({model_id: mid})});
+  const st = document.getElementById('llmModelStatus');
+  if (r.ok) {
+    llmModelEdited = false;
+    chatReady = false;
+    updateChatAvailability();
+    st.style.display = 'block';
+    st.textContent = 'Đã lưu. Worker đang tải model mới — đợi NodeAgent tải xong / restart nếu cần.';
+    const opt = document.getElementById('llmModelSelect').selectedOptions[0];
+    if (opt) {
+      document.getElementById('chatModelBadge').textContent =
+        'chat: ' + (opt.textContent.split(' (~')[0] || mid);
+    }
+  } else {
+    const j = await r.json().catch(() => ({}));
+    alert((j.error && j.error.message) || 'Không lưu được model');
+  }
+}
+
+function stopChatPolling() {
+  if (chatPollTimer) clearInterval(chatPollTimer);
+  chatPollTimer = null;
+}
+
+function applyChatToken(msg) {
+  if (!msg || msg.job_id !== activeChatJobId) return;
+  if (activeChatAttemptId && msg.attempt_id && msg.attempt_id !== activeChatAttemptId) return;
+  if (msg.attempt_id) activeChatAttemptId = msg.attempt_id;
+  const out = document.getElementById('chatOut');
+  const status = document.getElementById('chatStatus');
+  out.textContent += msg.delta || '';
+  status.textContent = 'Đang nhận câu trả lời…';
+}
+
+function applyChatResult(msg) {
+  if (!msg || msg.job_id !== activeChatJobId) return;
+  if (activeChatAttemptId && msg.attempt_id && msg.attempt_id !== activeChatAttemptId) return;
+  if (msg.attempt_id) activeChatAttemptId = msg.attempt_id;
+  const status = document.getElementById('chatStatus');
+  const node = document.getElementById('chatNode');
+  const out = document.getElementById('chatOut');
+  const prompt = activeChatPrompt;
+  if (msg.status === 'done') {
+    status.textContent = msg.duration_ms != null ? 'Xong (' + (msg.duration_ms / 1000).toFixed(1) + ' s)' : 'Xong';
+    if (typeof msg.text === 'string') out.textContent = msg.text;
+  } else {
+    status.textContent = 'Lỗi: ' + (msg.error_message || 'Không thể hoàn tất chat');
+  }
+  node.textContent = msg.node ? 'chạy trên ' + msg.node : '';
+  if (msg.status === 'done') {
+    appendChatHistory('user', prompt, 'Bạn · đã gửi');
+    appendChatHistory('assistant', msg.text || '(Không có nội dung)',
+      node.textContent || 'Trợ lý · hoàn tất');
+    retryChatPrompt = null;
+    document.getElementById('chatRetry').hidden = true;
+  } else {
+    appendChatHistory('user', prompt, 'Bạn · gửi thất bại');
+    appendChatHistory('error', msg.error_message || 'Không thể hoàn tất chat',
+      'Cần hành động · có thể gửi lại');
+    retryChatPrompt = prompt;
+    document.getElementById('chatRetry').hidden = !retryChatPrompt;
+  }
+  activeChatJobId = null;
+  activeChatAttemptId = null;
+  activeChatPrompt = null;
+  stopChatPolling();
+  updateChatAvailability();
+}
+
+function applyRuntimeEvent(msg) {
+  if (!lastState || !msg) return;
+  if (msg.type === 'local_agent_state') {
+    render({...lastState, local_agent: msg.local_agent || msg});
+  } else if (msg.type === 'model_state') {
+    render({...lastState, llm_readiness: msg.llm_readiness || msg.readiness || msg});
+  }
+}
+
+function connect() {
+  const token = getToken();
+  if (!token) return;
+  if (ws) try { ws.close(); } catch (e) {}
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({type: 'auth', token}));
+  };
+  ws.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.error) {
+      doLogout();
+      document.getElementById('loginErr').textContent = msg.error.message || 'Token hết hạn';
+      return;
+    }
+    if (msg.type === 'node_event') {
+      applyNodeEvent(msg);
+      return;
+    }
+    if (msg.type === 'chat_token') {
+      applyChatToken(msg);
+      return;
+    }
+    if (msg.type === 'chat_result') {
+      applyChatResult(msg);
+      return;
+    }
+    if (msg.type === 'local_agent_state' || msg.type === 'model_state') {
+      applyRuntimeEvent(msg);
+      return;
+    }
+    render(msg.state || msg);
+  };
+  ws.onclose = () => { if (getToken()) setTimeout(connect, 2000); };
+}
+
+let _landingBootstrapOpen = true;
+
+function showAuthFromLanding(tab) {
+  if (!hostApiAvailable()) return;
+  document.getElementById('landingView').classList.add('view-hidden');
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  showLandingTab(tab === 'join' ? 'join' : 'create');
+  refreshLandingStatus();
+}
+
+function showPublicLanding() {
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('landingView').classList.remove('view-hidden');
+}
+
+function showLandingTab(name) {
+  const map = {create: 'paneCreate', join: 'paneJoin'};
+  const tabs = {create: 'tabCreate', join: 'tabJoin'};
+  Object.keys(map).forEach(k => {
+    document.getElementById(map[k]).classList.toggle('active', k === name);
+    document.getElementById(tabs[k]).classList.toggle('active', k === name);
+  });
+}
+
+function isLoopbackHost() {
+  const h = (location.hostname || '').toLowerCase();
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
+}
+
+function fillJoinFromStatus(j) {
+  const linkEl = document.getElementById('joinLink');
+  if (!linkEl) return;
+  const code = j.code || j.code_hint || '';
+  // Ô join luôn same-origin — tránh đẩy Host từ 127.0.0.1 sang IP LAN.
+  if (code) {
+    linkEl.value = location.origin + '/join?code=' + encodeURIComponent(code);
+  }
+}
+
+let _landingCodeHint = '';
+
+async function refreshLandingStatus() {
+  const err = document.getElementById('loginErr');
+  try {
+    const r = await fetch('/api/room/status');
+    const j = await r.json();
+    const open = !!j.bootstrap_open;
+    _landingBootstrapOpen = open;
+    _landingCodeHint = j.code || j.code_hint || '';
+    const loopback = isLoopbackHost();
+    const btn = document.getElementById('btnCreateRoom');
+    const reopenBtn = document.getElementById('btnReopenBootstrap');
+    const banner = document.getElementById('roomLockedBanner');
+    const canCreate = open && loopback;
+    btn.disabled = !canCreate;
+    document.getElementById('paneCreate').style.opacity = canCreate ? '1' : '0.55';
+    reopenBtn.hidden = !(!open && loopback);
+    if (!open) {
+      banner.hidden = false;
+      banner.textContent = 'Phòng ' + (_landingCodeHint || '?')
+        + ' đang khóa — Tham gia link'
+        + (loopback ? ' hoặc Mở lại tạo phòng.' : '.');
+    } else {
+      banner.hidden = true;
+      banner.textContent = '';
+    }
+    const hint = document.getElementById('createGateHint');
+    hint.textContent = !loopback
+      ? 'Chỉ tạo từ http://127.0.0.1:8000/'
+      : (open ? '' : 'Phòng đã khóa.');
+    fillJoinFromStatus(j);
+    showLandingTab(open && loopback ? 'create' : 'join');
+  } catch (e) {
+    err.textContent = 'Không đọc được trạng thái phòng';
+  }
+}
+
+function goJoinOtherRoom() {
+  doLogout();
+  showLandingTab('join');
+}
+
+async function doReopenFromApp() {
+  if (!isLoopbackHost()) {
+    alert('Chỉ từ http://127.0.0.1:8000/');
+    return;
+  }
+  if (!confirm('Mở lại tạo phòng sẽ thu hồi token và xóa mật khẩu. Tiếp tục?')) {
+    return;
+  }
+  try {
+    const r = await fetch('/api/room/reopen-bootstrap', {method: 'POST'});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(apiErrMessage(j, r.status));
+      return;
+    }
+    doLogout();
+    showLandingTab('create');
+  } catch (e) {
+    alert(e.message || 'Không mở lại được');
+  }
+}
+
+async function doReopenBootstrap() {
+  const err = document.getElementById('loginErr');
+  err.textContent = '';
+  if (!isLoopbackHost()) {
+    err.textContent = 'Mở lại chỉ từ http://127.0.0.1:8000/';
+    return;
+  }
+  if (!confirm('Mở lại tạo phòng sẽ thu hồi mọi token và xóa mật khẩu hiện tại. Tiếp tục?')) {
+    return;
+  }
+  try {
+    const r = await fetch('/api/room/reopen-bootstrap', {method: 'POST'});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      err.textContent = apiErrMessage(j, r.status);
+      await refreshLandingStatus();
+      return;
+    }
+    await refreshLandingStatus();
+    showLandingTab('create');
+  } catch (e) {
+    err.textContent = e.message || 'Không mở lại được';
+  }
+}
+
+function apiErrMessage(j, status) {
+  if (j && j.error && j.error.message) return j.error.message;
+  if (status === 429) {
+    return 'Quá nhiều lần thử. Đợi một lúc rồi thử lại (worker spam không khóa admin).';
+  }
+  if (status === 401) {
+    return 'Cần đăng nhập admin (phòng đã khóa). Dùng «Tham gia link».';
+  }
+  return 'Lỗi ' + status;
+}
+
+async function adminJoin(room_code, password) {
+  const r = await fetch('/join', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({room_code, password, role: 'admin'})
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(apiErrMessage(j, r.status));
+  setToken(j.token);
+  return j;
+}
+
+async function doCreateRoom() {
+  const err = document.getElementById('loginErr');
+  err.textContent = '';
+  if (!isLoopbackHost()) {
+    err.textContent = 'Chỉ tạo phòng từ http://127.0.0.1:8000/';
+    return;
+  }
+  if (!_landingBootstrapOpen) {
+    err.textContent = 'Phòng đã khóa — dùng «Tham gia link», hoặc '
+      + '«Mở lại tạo phòng» (localhost) nếu quên mật khẩu.';
+    showLandingTab('join');
+    return;
+  }
+  const display_name = document.getElementById('createName').value.trim();
+  const worker_password = document.getElementById('createWorker').value;
+  const admin_password = document.getElementById('createAdmin').value;
+  if (!worker_password || !admin_password) {
+    err.textContent = 'Nhập đủ mật khẩu worker và admin';
+    return;
+  }
+  const codeHint = (_landingCodeHint || '').toUpperCase();
+  const pending = !codeHint
+    || codeHint.includes('PENDING')
+    || codeHint.includes('LOCAL');
+  const wantNew = !!(document.getElementById('createNewCode')
+    && document.getElementById('createNewCode').checked);
+  const regenerate_code = pending || wantNew;
+  try {
+    const r = await fetch('/api/room/bootstrap', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        display_name, worker_password, admin_password,
+        regenerate_code,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      err.textContent = apiErrMessage(j, r.status);
+      await refreshLandingStatus();
+      if (r.status === 401) showLandingTab('join');
+      return;
+    }
+    const code = j.room && j.room.code;
+    document.getElementById('createWorker').value = '';
+    document.getElementById('createAdmin').value = '';
+    try {
+      await adminJoin(code, admin_password);
+      showApp();
+    } catch (joinErr) {
+      await refreshLandingStatus();
+      err.textContent = joinErr.message || 'Tạo phòng OK nhưng đăng nhập admin thất bại';
+      showLandingTab('join');
+    }
+  } catch (e) {
+    await refreshLandingStatus();
+    err.textContent = e.message || 'Tạo phòng thất bại';
+  }
+}
+
+async function doJoinLink() {
+  const err = document.getElementById('loginErr');
+  err.textContent = '';
+  const raw = document.getElementById('joinLink').value.trim();
+  const password = document.getElementById('joinPass').value;
+  if (!raw || !password) {
+    err.textContent = 'Cần link mời và mật khẩu admin';
+    return;
+  }
+  let url;
+  try {
+    url = new URL(raw, location.origin);
+  } catch (e) {
+    err.textContent = 'Link không hợp lệ';
+    return;
+  }
+  const code = url.searchParams.get('code') || '';
+  if (!code) {
+    err.textContent = 'Link thiếu ?code=THERMAL-…';
+    return;
+  }
+  // Loopback: luôn join same-origin — không redirect sang LAN (mất mật khẩu).
+  if (isLoopbackHost() || url.origin === location.origin) {
+    try {
+      await adminJoin(code, password);
+      document.getElementById('joinPass').value = '';
+      showApp();
+    } catch (e) {
+      err.textContent = e.message || 'Không tham gia được';
+    }
+    return;
+  }
+  // Cross-origin thật: giữ form mật khẩu — user mở tab Host thủ công.
+  err.textContent = 'Link thuộc Host khác (' + url.origin
+    + '). Mở URL đó trên trình duyệt Host, rồi nhập mật khẩu tại đó — '
+    + 'không tự chuyển trang (tránh mất mật khẩu).';
+}
+
+function doLogout() {
+  clearToken();
+  if (ws) try { ws.close(); } catch (e) {}
+  showPublicLanding();
+  if (apiCompatible) refreshLandingStatus();
+}
+
+function showApp() {
+  if (!hostApiAvailable()) {
+    showPublicLanding();
+    return;
+  }
+  document.getElementById('landingView').classList.add('view-hidden');
+  document.getElementById('loginOverlay').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  async function downloadCsv(url, filename) {
+    const r = await fetch(url, {headers: authHeaders()});
+    if (!r.ok) { alert('Không tải được CSV'); return; }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+  }
+  document.getElementById('csvReportLink').onclick = async (ev) => {
+    ev.preventDefault();
+    await downloadCsv('/api/esg/report.csv', 'esg_report.csv');
+  };
+  document.getElementById('csvEventsLink').onclick = async (ev) => {
+    ev.preventDefault();
+    await downloadCsv('/api/audit.csv', 'room_audit.csv');
+  };
+  loadLlmCatalog().catch(() => {});
+  connect();
+  refreshInviteQr();
+}
+
+function clearChatUi() {
+  document.getElementById('chatPrompt').value = '';
+  document.getElementById('chatOut').textContent = '';
+  document.getElementById('chatNode').textContent = '';
+  document.getElementById('chatStatus').textContent = '';
+  activeChatJobId = null;
+  activeChatAttemptId = null;
+  activeChatPrompt = null;
+  retryChatPrompt = null;
+  document.getElementById('chatRetry').hidden = true;
+  document.getElementById('chatHistory').replaceChildren();
+  stopChatPolling();
+  updateChatAvailability();
+}
+
+async function sendChat() {
+  if (!chatReady) {
+    updateChatAvailability();
+    return;
+  }
+  if (!sessionStorage.getItem(CHAT_DISCLOSE_KEY)) {
+    const ok = confirm(
+      'Chat sẽ gửi prompt tới máy worker trong phòng (hoặc host).\n' +
+      'Worker không ghi nội dung prompt vào log.\n\nTiếp tục?');
+    if (!ok) return;
+    sessionStorage.setItem(CHAT_DISCLOSE_KEY, '1');
+  }
+  const prompt = document.getElementById('chatPrompt').value.trim();
+  if (!prompt) return;
+  const btn = document.getElementById('chatSend');
+  btn.dataset.sending = 'true';
+  updateChatAvailability();
+  document.getElementById('chatOut').textContent = '';
+  document.getElementById('chatNode').textContent = '';
+  document.getElementById('chatStatus').textContent = 'Đang xếp hàng…';
+  activeChatPrompt = prompt;
+  document.getElementById('chatRetry').hidden = true;
+  try {
+    const r = await fetch('/chat', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({prompt, max_tokens: 256, temperature: 0.7})
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      document.getElementById('chatStatus').textContent =
+        (j.error && j.error.message) || ('Lỗi ' + r.status);
+      appendChatHistory('user', prompt, 'Bạn · gửi thất bại');
+      appendChatHistory('error', (j.error && j.error.message) || ('Lỗi ' + r.status),
+        'Cần hành động · có thể gửi lại');
+      retryChatPrompt = prompt;
+      document.getElementById('chatRetry').hidden = false;
+      activeChatPrompt = null;
+      return;
+    }
+    document.getElementById('chatStatus').textContent =
+      `job ${j.job_id} — vị trí hàng đợi ${j.queue_position}` +
+      (j.estimated_wait_s != null ? `, ~${j.estimated_wait_s}s` : '');
+    activeChatJobId = j.job_id;
+    activeChatAttemptId = j.attempt_id || null;
+    pollChat(j.job_id);
+  } catch (e) {
+    document.getElementById('chatStatus').textContent = 'Không gửi được chat';
+    appendChatHistory('user', prompt, 'Bạn · gửi thất bại');
+    appendChatHistory('error', 'Không gửi được chat',
+      'Cần hành động · kiểm tra kết nối rồi gửi lại');
+    retryChatPrompt = prompt;
+    document.getElementById('chatRetry').hidden = false;
+    activeChatPrompt = null;
+  } finally {
+    delete btn.dataset.sending;
+    updateChatAvailability();
+  }
+}
+
+function pollChat(jobId) {
+  if (chatPollTimer) clearInterval(chatPollTimer);
+  const tick = async () => {
+    try {
+      const r = await fetch('/chat/' + encodeURIComponent(jobId), {
+        headers: authHeaders()
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        document.getElementById('chatStatus').textContent =
+          (j.error && j.error.message) || ('Lỗi ' + r.status);
+        activeChatJobId = null;
+        activeChatAttemptId = null;
+        stopChatPolling();
+        updateChatAvailability();
+        return;
+      }
+      if (jobId !== activeChatJobId) return;
+      if (j.status === 'queued') {
+        document.getElementById('chatStatus').textContent =
+          'Đang chờ máy rảnh…' +
+          (j.queue_position != null ? ` (hàng đợi #${j.queue_position})` : '');
+      } else if (j.status === 'running') {
+        document.getElementById('chatStatus').textContent = 'Đang suy luận…';
+        if (j.node) {
+          document.getElementById('chatNode').textContent =
+            'chạy trên ' + j.node;
+          if (!animatedChatJobs.has(jobId)) {
+            const target = document.getElementById('node-' + j.node);
+            if (target) animateDot(target);
+            animatedChatJobs.add(jobId);
+            addActivity('Yêu cầu chat → ' + j.node);
+          }
+        }
+      } else if (j.status === 'done') {
+        document.getElementById('chatStatus').textContent = 'Xong';
+        document.getElementById('chatNode').textContent =
+          j.node ? ('chạy trên ' + j.node) : '';
+        document.getElementById('chatOut').textContent = j.text || '';
+        appendChatHistory('user', activeChatPrompt, 'Bạn · đã gửi');
+        appendChatHistory('assistant', j.text || '(Không có nội dung)',
+          j.node ? ('chạy trên ' + j.node) : 'Trợ lý · hoàn tất');
+        retryChatPrompt = null;
+        document.getElementById('chatRetry').hidden = true;
+        activeChatJobId = null;
+        activeChatAttemptId = null;
+        activeChatPrompt = null;
+        stopChatPolling();
+        updateChatAvailability();
+      } else if (j.status === 'error') {
+        document.getElementById('chatStatus').textContent =
+          'Lỗi: ' + (j.error_message || 'unknown');
+        if (j.node)
+          document.getElementById('chatNode').textContent =
+            'chạy trên ' + j.node;
+        appendChatHistory('user', activeChatPrompt, 'Bạn · gửi thất bại');
+        appendChatHistory('error', j.error_message || 'Không thể hoàn tất chat',
+          'Cần hành động · có thể gửi lại');
+        retryChatPrompt = activeChatPrompt;
+        document.getElementById('chatRetry').hidden = !retryChatPrompt;
+        activeChatJobId = null;
+        activeChatAttemptId = null;
+        activeChatPrompt = null;
+        stopChatPolling();
+        updateChatAvailability();
+      }
+    } catch (e) {
+      document.getElementById('chatStatus').textContent = 'Mất kết nối khi chờ kết quả';
+    }
+  };
+  tick();
+  chatPollTimer = setInterval(tick, 1000);
+}
+
+(function initLanding() {
+  initializeTheme();
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if (code) {
+    document.getElementById('joinLink').value =
+      location.origin + '/join?code=' + encodeURIComponent(code);
+  }
+  showPublicLanding();
+  verifyApiRevision().then((compatible) => {
+    if (!compatible) return;
+    if (getToken()) {
+      showApp();
+      return;
+    }
+    if (params.get('join') === '1' || code) {
+      showAuthFromLanding('join');
+      return;
+    }
+    refreshLandingStatus();
+  });
+})();
+</script>
+</body>
+</html>

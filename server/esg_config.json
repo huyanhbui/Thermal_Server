@@ -1,0 +1,57 @@
+{
+  "_comment": "Hằng số ESG. Mỗi giá trị phải ghi nguồn ở trường _source tương ứng.",
+
+  "tier1": {
+    "min_samples_for_confidence": 100,
+    "_min_samples_for_confidence_source": "docs/07 §3.1 — ≥100 job sensor → nhãn ok",
+    "min_samples_to_show": 20,
+    "_min_samples_to_show_source": "docs/07 §3.1 / §7.4 — dưới 20 không hiện % cải thiện",
+    "throttle_clock_ratio": 0.90,
+    "_throttle_source": "docs/07 §3.3 — 90% base clock, không phải turbo"
+  },
+
+  "tier2": {
+    "leakage_w_per_c": null,
+    "_leakage_source": "để null cho tới khi power_model_fit.py đo được",
+    "fan_max_w": 3.0,
+    "_fan_source": "ước lượng cho quạt laptop; đo lại nếu có số thật",
+    "fan_rpm_max": 5000.0,
+    "_fan_rpm_max_source": "ước lượng laptop; ghi đè nếu đo được",
+    "cooling_base_factor": 0.25,
+    "_cooling_source": "ước lượng thận trọng cho phòng văn phòng, KHÔNG phải PUE data center",
+    "cooling_weather_k": 0.02,
+    "_cooling_weather_k_source": "docs/07 §4 — hiệu chỉnh ngoài trời",
+    "cooling_reference_temp_c": 25.0,
+    "_cooling_reference_source": "docs/07 §4 — T tham chiếu 25°C",
+    "outdoor_temp_c": null,
+    "_outdoor_temp_source": "null = chưa có thời tiết; dùng base_factor thuần"
+  },
+
+  "tier3": {
+    "scale_nodes": 1000,
+    "_scale_nodes_source": "docs/07 §5 — ngoại suy mặc định 1000 máy",
+    "scale_days": 365,
+    "_scale_days_source": "docs/07 §5 — ngoại suy mặc định 1 năm",
+    "price_vnd_per_kwh": 2500,
+    "_price_vnd_source": "giá điện sinh hoạt VN tham chiếu — cập nhật khi đổi biểu giá",
+    "price_usd_per_kwh": 0.10,
+    "_price_usd_source": "tham chiếu USD/kWh — không phải giá giao dịch",
+    "co2_kg_per_kwh": 0.72,
+    "_co2_source": "hệ số lưới điện VN — CẬP NHẬT HẰNG NĂM, ghi rõ năm",
+    "co2_source_year": 2024,
+    "carbon_price_usd_per_tco2": 20.0,
+    "_carbon_price_source": "giá tham chiếu, KHÔNG phải giá giao dịch thật"
+  },
+
+  "anti_gaming": {
+    "threshold_margin_above_idle_c": 8.0,
+    "_threshold_margin_source": "docs/07 §7.1 — sàn max(40, idle+8)"
+  },
+
+  "legacy": {
+    "node_power_kw": 0.065,
+    "_node_power_source": "chỉ dùng cho công thức PoC cũ kwh_saved — không nuôi Tầng 1–3",
+    "cooling_overhead_factor": 0.25,
+    "_cooling_overhead_source": "đồng bộ cooling_base_factor; không còn 0.5 PUE DC"
+  }
+}

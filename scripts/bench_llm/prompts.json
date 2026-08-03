@@ -1,0 +1,142 @@
+[
+  {
+    "id": "vi-short-01",
+    "lang": "vi",
+    "length": "short",
+    "max_tokens": 80,
+    "prompt": "Thủ đô của Việt Nam là gì? Trả lời một câu."
+  },
+  {
+    "id": "vi-short-02",
+    "lang": "vi",
+    "length": "short",
+    "max_tokens": 100,
+    "prompt": "Giải thích ngắn gọn: CPU và GPU khác nhau thế nào?"
+  },
+  {
+    "id": "vi-med-01",
+    "lang": "vi",
+    "length": "medium",
+    "max_tokens": 180,
+    "prompt": "Một máy tính nóng lên khi chạy nhiều tác vụ. Hãy nêu ba cách giảm nhiệt mà người dùng văn phòng có thể làm ngay, mỗi cách một câu."
+  },
+  {
+    "id": "vi-med-02",
+    "lang": "vi",
+    "length": "medium",
+    "max_tokens": 200,
+    "prompt": "Sửa lỗi chính tả và ngữ pháp của câu sau, rồi giải thích ngắn vì sao sửa: \"Hôm qua tôi đã đi đến công viên và gặp một người bạn cũ của tôi mà chúng tôi không gặp nhau lâu năm.\""
+  },
+  {
+    "id": "vi-med-03",
+    "lang": "vi",
+    "length": "medium",
+    "max_tokens": 200,
+    "prompt": "Nếu hôm nay trời mưa và tôi không có ô, tôi nên làm gì trước khi ra ngoài? Liệt kê 3 bước hợp lý."
+  },
+  {
+    "id": "vi-long-01",
+    "lang": "vi",
+    "length": "long",
+    "max_tokens": 250,
+    "prompt": "Tóm tắt đoạn sau thành 3 gạch đầu dòng bằng tiếng Việt:\n\nHệ thống điều phối tải theo nhiệt thu thập nhiệt độ và công suất từ nhiều máy Windows, dự báo máy nào sắp quá nhiệt, rồi chuyển công việc sang máy mát hơn. Mục tiêu là giảm nguy cơ throttle và tiết kiệm năng lượng. Người dùng chat qua giao diện web; câu trả lời được suy luận trên các máy phụ trong mạng nội bộ thay vì chỉ trên một máy chủ trung tâm."
+  },
+  {
+    "id": "vi-long-02",
+    "lang": "vi",
+    "length": "long",
+    "max_tokens": 250,
+    "prompt": "Viết một email ngắn (khoảng 80–120 từ) bằng tiếng Việt gửi đồng nghiệp, nhờ họ cài đặt một chương trình đo nhiệt độ CPU trên máy làm việc. Giọng lịch sự, rõ ràng, không dùng tiếng Anh thừa."
+  },
+  {
+    "id": "vi-reason-01",
+    "lang": "vi",
+    "length": "medium",
+    "max_tokens": 180,
+    "prompt": "Có 3 máy: A nóng 85°C, B nóng 55°C, C nóng 70°C. Bạn cần chạy một tác vụ nặng. Nên chọn máy nào và vì sao? Trả lời ngắn."
+  },
+  {
+    "id": "en-short-01",
+    "lang": "en",
+    "length": "short",
+    "max_tokens": 80,
+    "prompt": "What is the capital of France? Answer in one sentence."
+  },
+  {
+    "id": "en-short-02",
+    "lang": "en",
+    "length": "short",
+    "max_tokens": 100,
+    "prompt": "In one short paragraph, explain what a token is in large language models."
+  },
+  {
+    "id": "en-med-01",
+    "lang": "en",
+    "length": "medium",
+    "max_tokens": 180,
+    "prompt": "List three practical ways an office worker can keep a laptop cooler under heavy CPU load. One sentence each."
+  },
+  {
+    "id": "en-med-02",
+    "lang": "en",
+    "length": "medium",
+    "max_tokens": 200,
+    "prompt": "Fix grammar in this sentence and briefly explain the fixes: \"Yesterday I go to the park and meeted an old friend which I didn't saw for years.\""
+  },
+  {
+    "id": "en-med-03",
+    "lang": "en",
+    "length": "medium",
+    "max_tokens": 200,
+    "prompt": "If it is raining and I have no umbrella, what should I do before going outside? List 3 reasonable steps."
+  },
+  {
+    "id": "en-long-01",
+    "lang": "en",
+    "length": "long",
+    "max_tokens": 250,
+    "prompt": "Summarize the following into 3 bullet points:\n\nA thermal load orchestrator collects temperature and power from many Windows PCs, forecasts which machines will overheat, and moves work to cooler nodes. The goal is to avoid thermal throttling and save energy. Users chat via a web UI; answers are inferred on peer machines on the LAN instead of only on a central server."
+  },
+  {
+    "id": "en-long-02",
+    "lang": "en",
+    "length": "long",
+    "max_tokens": 250,
+    "prompt": "Write a short polite email (80–120 words) asking a colleague to install a small CPU temperature monitoring agent on their work PC."
+  },
+  {
+    "id": "en-reason-01",
+    "lang": "en",
+    "length": "medium",
+    "max_tokens": 180,
+    "prompt": "There are 3 machines: A at 85°C, B at 55°C, C at 70°C. You need to run a heavy job. Which machine should you pick and why? Keep it short."
+  },
+  {
+    "id": "mix-vi-en-01",
+    "lang": "mix",
+    "length": "medium",
+    "max_tokens": 200,
+    "prompt": "Giải thích bằng tiếng Việt thuật ngữ tiếng Anh \"thermal throttling\" là gì, và nêu một ví dụ thực tế trên laptop."
+  },
+  {
+    "id": "mix-code-01",
+    "lang": "mix",
+    "length": "medium",
+    "max_tokens": 200,
+    "prompt": "Viết một hàm Python ngắn tên `celsius_to_fahrenheit(c)` và giải thích bằng tiếng Việt từng dòng làm gì."
+  },
+  {
+    "id": "long-ctx-vi",
+    "lang": "vi",
+    "length": "long",
+    "max_tokens": 220,
+    "prompt": "Đọc ngữ cảnh sau rồi trả lời câu hỏi cuối cùng bằng tiếng Việt, tối đa 4 câu.\n\nNgữ cảnh: Phòng lab có 8 máy Windows dùng chung một host điều phối. Host không đẩy job vào máy; mỗi worker chủ động hỏi việc. Khi một máy bị gắn cờ quá nhiệt, nó không nhận job chat mới cho đến khi nhiệt giảm. Người dùng vẫn nhận câu trả lời vì job có thể được giữ chỗ trên máy khác.\n\nCâu hỏi: Vì sao worker phải chủ động hỏi việc thay vì host đẩy việc vào?"
+  },
+  {
+    "id": "long-ctx-en",
+    "lang": "en",
+    "length": "long",
+    "max_tokens": 220,
+    "prompt": "Read the context and answer the final question in at most 4 sentences.\n\nContext: A lab has 8 Windows PCs sharing one orchestrator host. The host does not push jobs; each worker pulls work. When a node is flagged hot, it stops taking new chat jobs until it cools. Users still get answers because reservations can move to other nodes.\n\nQuestion: Why must workers pull jobs instead of the host pushing them?"
+  }
+]

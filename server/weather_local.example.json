@@ -1,0 +1,13 @@
+{
+  "_comment": "Sao chép thành weather_local.json và điền api_key. KHÔNG commit weather_local.json.",
+  "provider": "openweathermap",
+  "api_key": "",
+  "default_site_id": "hanoi-office-4f",
+  "sites": {
+    "hanoi-office-4f": {
+      "lat": 21.0285,
+      "lon": 105.8542,
+      "label": "Hà Nội"
+    }
+  }
+}
