@@ -34,19 +34,27 @@ Các trạng thái hiển thị: `missing`, `starting`, `awaiting_uac`, `joining
 
 Mỗi hai giây Agent đọc CPU temperature, GPU temperature, CPU utilization và package power từ `SensorReader.cs`, rồi gửi `/ingest`. Host ghi mẫu vào SQLite, xây dựng feature window và dự báo nhiệt độ cực đại ba phút.
 
-Scheduler ưu tiên node mát/rảnh hơn nhưng không để hàng đợi đứng im khi chỉ có một máy. Một node READY nhận job tiếp theo ngay khi hoàn tất job trước; khi có nhiều node, các job song song được phân bổ trước khi tái sử dụng node. Node có telemetry stale hoặc runtime LLM chưa READY không nhận chat.
+Scheduler ưu tiên node mát/rảnh hơn nhưng không để hàng đợi đứng im khi chỉ có một máy. Một node READY nhận job tiếp theo ngay khi hoàn tất job trước; khi có nhiều node, các job song song được phân bổ trước khi tái sử dụng node.
+
+## Điều phối tác vụ ngoài LLM
+
+Hàng đợi không chỉ dành cho chat. Host cũng điều phối các tác vụ tính toán
+thông thường, chẳng hạn `burn` dùng để kiểm thử tải CPU, hiệu chuẩn nhiệt hoặc
+một workload nền đã được khai báo. Mỗi job có loại, thời lượng, số core và
+deadline; Agent nhận job qua `GET /jobs/next`, chạy `JobRunner` rồi gửi kết
+quả về Host.
+
+Với các job này, scheduler dùng nhiệt độ dự báo, headroom, trạng thái bận và
+telemetry gần nhất để chọn máy. Node bị quá nhiệt, stale hoặc hết slot không
+nhận thêm job. Khi cụm chỉ còn một máy phù hợp, Host vẫn cấp job tuần tự cho
+máy đó thay vì tạm dừng toàn bộ workload. Job LLM có thêm điều kiện runtime
+READY; job tính toán thường không phụ thuộc model LLM.
 
 ## LLM và streaming
 
 Node chỉ là LLM READY khi báo đúng `model_id`, SHA-256, `generation` và `runtime_id` của model đang chọn. Khi đổi model, Host tăng generation và hạ readiness toàn bộ node; chat mới chỉ được nhận khi một node báo lại đúng generation. Nếu không có node hợp lệ, `/chat` trả `NO_LLM_READY`, không tạo job treo.
 
 NodeAgent đọc stream thật từ llama.cpp, gửi delta đến `/jobs/{job_id}/events`; Host phát `chat_token` qua WebSocket. Kết quả cuối là idempotent theo `job_id + attempt_id`. Nếu node lỗi giữa chừng, scheduler thử node phù hợp kế tiếp một lần, tránh chọn lại node vừa lỗi nếu còn lựa chọn.
-
-## Vì sao không chạy hai llama-server trên một Host
-
-Mỗi runtime Gemma/LLM CPU có thể dùng nhiều luồng và hàng GiB RAM. Hai `llama-server` do hai NodeAgent trên cùng máy sẽ cạnh tranh tài nguyên, làm telemetry chậm và inference trễ. Đây không phải cách chia tải.
-
-Host ngăn Retry/UAC tạo Agent thứ hai. Khi Agent đã chạy, dashboard chỉ chờ telemetry/readiness. Updater dừng đúng Python/NodeAgent nằm dưới thư mục phiên bản Thermal rồi khởi động một cặp Host/Agent mới.
 
 ## Tunnel và máy khách
 
