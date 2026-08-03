@@ -1,5 +1,7 @@
 # Thermal Orchestrator
 
+Tiếng Việt | [English](README.en.md)
+
 Thermal Orchestrator là PoC Windows điều phối tải AI theo nhiệt độ và công
 suất thật của nhiều máy. Host lưu telemetry, dự báo nhiệt, chọn node phù hợp
 và truyền token chat qua WebSocket. Mỗi worker chỉ tạo kết nối outbound về

@@ -1,5 +1,7 @@
 # Thermal Orchestrator hoạt động như thế nào
 
+Tiếng Việt | [English](HOW_IT_WORKS.en.md)
+
 ## Kiến trúc
 
 ```text

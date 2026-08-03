@@ -1,5 +1,7 @@
 # Báo cáo tổng quan dự án Thermal Orchestrator
 
+Tiếng Việt | [English](PROJECT_OVERVIEW.en.md)
+
 ## 1. Mục tiêu
 
 Thermal Orchestrator là Proof of Concept điều phối tải AI phân tán trên cụm
