@@ -291,7 +291,7 @@ Với ngưỡng 75°C và `HYSTERESIS_C = 3`: gắn cờ ở ≥75,0°C, chỉ g
 
 ---
 
-## 7. Mã giả đầy đủ
+## 7. Mã đầy đủ
 
 ```python
 # scheduler.py — chỉ đọc ForecastCache, không chạm cơ sở dữ liệu
