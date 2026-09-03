@@ -49,7 +49,28 @@ def test_explicit_data_directory_moves_relative_operational_config(monkeypatch):
     monkeypatch.setenv("THERMAL_DATA_DIR", r"C:\ProgramData\ThermalOrchestrator\shared")
     assert _runtime_data_path("settings.json") == (
         r"C:\ProgramData\ThermalOrchestrator\shared\settings.json")
+    assert _runtime_data_path("model.pkl") == (
+        r"C:\ProgramData\ThermalOrchestrator\shared\model.pkl")
     assert _runtime_data_path("nested/settings.json") == "nested/settings.json"
+
+
+def test_make_state_loads_forecaster_model_from_thermal_data_dir(
+        tmp_path, monkeypatch):
+    """Installer đặt THERMAL_DATA_DIR; model.pkl phải cạnh telemetry, không theo CWD."""
+    data = tmp_path / "shared"
+    data.mkdir()
+    monkeypatch.setenv("THERMAL_DATA_DIR", str(data))
+    monkeypatch.chdir(tmp_path)
+    state = make_state(db_path=":memory:", bootstrap_open=True)
+    assert state.forecaster.model_loaded is False
+    # Relative default remaps; absolute fixture path must stay untouched.
+    other = tmp_path / "fixture" / "model.pkl"
+    other.parent.mkdir()
+    abs_state = make_state(
+        db_path=":memory:", model_path=str(other), bootstrap_open=True)
+    assert abs_state.forecaster.model_loaded is False
+    from server import _runtime_data_path
+    assert _runtime_data_path("model.pkl") == str(data / "model.pkl")
 
 
 def test_one_exe_starts_host_with_the_shared_programdata_directory():
@@ -179,7 +200,11 @@ def test_bootstrapper_accepts_documented_dash_commands_and_starts_host():
     assert "TrimStart('-')" in source
     assert '"install" or "repair" or "update" or "uninstall"' in source
     assert "StartHost(destination)" in source
-    assert 'command is not ("repair" or "update")' in source
+    assert 'command is "repair" or "update"' in source
+    # Cùng nhãn version nhưng payload khác nhau phải được cài đè. Nếu chỉ so
+    # tên thư mục, install sẽ khởi động lại đúng bản cũ mà không báo gì.
+    assert "SHA256.HashData(payload)" in source
+    assert "ReadInstalledHash(Path.Combine(destination, PayloadHashFile))" in source
     assert '".previous-"' in source
     assert "Directory.Move(destination, previousDestination)" in source
     assert "Directory.Move(previousDestination, destination)" in source

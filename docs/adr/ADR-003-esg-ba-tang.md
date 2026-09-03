@@ -27,11 +27,11 @@ Bốn vấn đề, mỗi vấn đề đủ để một người phản biện c�
 
 **Ba tầng tách bạch, không bao giờ cộng gộp thành một con số.**
 
-| Tầng | Nội dung | Độ tin cậy |
-|---|---|---|
-| **1 · ĐO THẬT** | J/token thực đo, A/B với round-robin, giây throttle tránh được | Bảo vệ được 100% |
-| **2 · SUY RA** | Dòng rò theo nhiệt, điện quạt, hệ số làm mát theo site | Có giả định, hiển thị ngay cạnh số |
-| **3 · NGOẠI SUY** | Chiếu lên N node × T thời gian, quy đổi tiền/CO₂, định giá carbon | Dán nhãn "DỰ PHÓNG" |
+| Tầng | UI (EN) | Nội dung | Độ tin cậy |
+|---|---|---|---|
+| **1 · ĐO THẬT** | MEASURED | J/token thực đo, A/B với round-robin, giây throttle tránh được | Bảo vệ được 100% |
+| **2 · SUY RA** | DERIVED | Dòng rò theo nhiệt, điện quạt, hệ số làm mát theo site | Có giả định, hiển thị ngay cạnh số |
+| **3 · NGOẠI SUY** | PROJECTED | Chiếu lên N node × T thời gian, quy đổi tiền/CO₂, định giá carbon | Dán nhãn "DỰ PHÓNG" / PROJECTED |
 
 Ba quy tắc bất di bất dịch:
 

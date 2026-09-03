@@ -34,7 +34,7 @@ Tài liệu này viết cho người đang gặp sự cố lúc 11 giờ đêm. 
 | Chỉ số | Bình thường | Cảnh báo | Nghiêm trọng |
 |---|---|---|---|
 | Node STALE | 0 | 1–2 | >2 hoặc kéo dài >10 phút |
-| Chiều dài hàng đợi chat | 0–3 | 4–9 | ≥10 (đầy) |
+| Chiều dài hàng đợi chat | 0–3 | 4–16 | ≥32 (đầy, `max_queue=32`) |
 | Tỷ lệ giữ chỗ hết hạn | <1% | 1–5% | >5% |
 | Số lần `join_failed`/giờ | 0–2 | 3–10 | >10 từ một IP |
 | Sai số dự báo (trung bình trượt 7 ngày) | < MAE huấn luyện | 1–2× | >2× |
@@ -160,7 +160,7 @@ grep "giữ chỗ hết hạn" logs/server.log | grep -oP 'ở \S+' | sort | uni
 
 | Triệu chứng | Kiểm tra | Xử lý |
 |---|---|---|
-| Badge "dự phòng (chưa huấn luyện)" | `model.pkl` có tồn tại không | Chạy hiệu chuẩn rồi `train_model.py` |
+| Badge "Forecast: Linear fallback (not ML)" | `model.pkl` trong `THERMAL_DATA_DIR` (Host: `%ProgramData%\ThermalOrchestrator\shared`) | Train từ telemetry hiện có: `python train_model.py` (tôn trọng `THERMAL_DATA_DIR`), rồi **restart Host**; kỳ vọng log `[FORECAST] Loaded trained model` và `forecast_source=ml` |
 | Dự báo sai nhiều | Sai số thực tế ([05 §9](05-du-bao-nhiet.md#9-giám-sát-chất-lượng-khi-vận-hành)) | Mô hình đã trôi — hiệu chuẩn lại |
 | Node mới dự báo rất tệ | Model theo node có chưa | Chưa hiệu chuẩn — đang dùng model gộp, chấp nhận được tạm thời |
 | Dự báo `null` mãi | Số mẫu trong 180 giây | Cần ≥5 mẫu trải ≥30 giây |

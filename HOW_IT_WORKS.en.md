@@ -61,7 +61,7 @@ The wizard asks for node name, Host URL, and worker password. It rejects `localh
 
 ## ESG data
 
-ESG has three separate layers: **MEASURED** (sensor), **INFERRED** (model), and **FALLBACK** (reference only). They must not be summed together. The dashboard does not show large speculative figures when data is missing. Operational audit data is separate and never records passwords, tokens, prompts, or LLM answers.
+ESG has three separate layers: **MEASURED** (sensor), **DERIVED** (model), and **PROJECTED** (scaled extrapolation — not the linear thermal-forecast “fallback”). They must not be summed together. The dashboard does not show large speculative figures when data is missing. Operational audit data is separate and never records passwords, tokens, prompts, or LLM answers.
 
 ## Quick diagnosis
 

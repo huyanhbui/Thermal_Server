@@ -136,6 +136,44 @@ class WeatherService:
             log.warning("[WEATHER] fetch %s thất bại: %s", site_id, e)
             return None
 
+    def ingest_client_reading(
+        self,
+        *,
+        temp_c: float,
+        feels_like_c: float | None,
+        lat: float,
+        lon: float,
+        now: float,
+        site_id: str = "gps-host",
+        label: str | None = None,
+        source: str = "owm_gps",
+    ) -> dict:
+        """Accept a browser-fetched OWM reading (API key never sent here)."""
+        feels = float(feels_like_c if feels_like_c is not None else temp_c)
+        entry = {
+            "temp_c": float(temp_c),
+            "feels_like_c": feels,
+            "updated_at": float(now),
+            "site_id": site_id,
+            "lat": float(lat),
+            "lon": float(lon),
+            "label": (label or "GPS host").strip() or "GPS host",
+            "client_source": str(source or "owm_gps"),
+        }
+        self._cache[site_id] = entry
+        # Prefer this site for ESG outdoor temp when host pushes GPS weather.
+        self._cfg["default_site_id"] = site_id
+        sites = dict(self._cfg.get("sites") or {})
+        sites[site_id] = {
+            "lat": float(lat), "lon": float(lon),
+            "label": entry["label"],
+        }
+        self._cfg["sites"] = sites
+        log.info(
+            "[WEATHER] ingest %s temp=%.1f°C source=%s",
+            site_id, entry["temp_c"], entry["client_source"])
+        return entry
+
     def refresh(self, site_id: str, now: float) -> None:
         """Gọi API (blocking) — chỉ từ vòng nền / to_thread."""
         self._try_fetch(site_id, now)
@@ -157,10 +195,13 @@ class WeatherService:
         age = now - cached["updated_at"]
         if age > CACHE_MAX_AGE_S:
             return None
+        src = cached.get("client_source") or "cache"
         return {
             **cached,
-            "source": "cache",
-            "label": self._label(site_id),
+            "source": src,
+            "label": cached.get("label") or self._label(site_id),
+            "lat": cached.get("lat"),
+            "lon": cached.get("lon"),
         }
 
     def get(self, site_id: str, now: float) -> dict | None:
@@ -218,6 +259,10 @@ class WeatherService:
                     "source": got["source"],
                     "label": got.get("label") or sid,
                 }
+                if got.get("lat") is not None:
+                    out[sid]["lat"] = got["lat"]
+                if got.get("lon") is not None:
+                    out[sid]["lon"] = got["lon"]
         return out
 
     def outdoor_temp_c(self, site_id: str, now: float) -> float | None:

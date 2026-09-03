@@ -102,6 +102,7 @@ class Room:
                            "Mật khẩu worker không được trùng mật khẩu admin.")
         self.worker_password_hash = digest
         self.worker_password_len = len(password)
+        self._clear_join_failures_unlocked("worker password set")
 
     def set_admin_password(self, password: str) -> None:
         with self._lock:
@@ -118,6 +119,7 @@ class Room:
                            "Mật khẩu admin không được trùng mật khẩu worker.")
         self.admin_password_hash = digest
         self.admin_password_len = len(password)
+        self._clear_join_failures_unlocked("admin password set")
 
     def set_password(self, password: str, *, allow_shared: bool = False) -> None:
         """Đặt cùng mật khẩu worker+admin — chỉ khi allow_shared=True (test)."""
@@ -136,6 +138,7 @@ class Room:
             self.admin_password_hash = digest
             self.worker_password_len = len(password)
             self.admin_password_len = len(password)
+            self._clear_join_failures_unlocked("shared password set")
 
     def has_password(self) -> bool:
         return (self.worker_password_hash is not None
@@ -149,8 +152,10 @@ class Room:
 
     def regenerate_code(self) -> str:
         """Sinh mã THERMAL-XXXX mới."""
-        self.room_code = "THERMAL-" + secrets.token_hex(2).upper()
-        return self.room_code
+        with self._lock:
+            self.room_code = "THERMAL-" + secrets.token_hex(2).upper()
+            self._clear_join_failures_unlocked("room code regenerated")
+            return self.room_code
 
     def verify_worker_password(self, password: str) -> bool:
         if self.worker_password_hash is None:
@@ -218,6 +223,26 @@ class Room:
         self._fail_streak[key] = 0
         self._backoff_until.pop(key, None)
         self._fail_ts.pop(key, None)
+
+    def _clear_join_failures_unlocked(self, reason: str) -> None:
+        """Forget failures recorded against a credential that no longer exists.
+
+        Backoff is a memory of guesses at one room code + password pair.  A
+        close, a rotation, or a new code destroys that pair, so the counters say
+        nothing about the new one; keeping them only locks out the workers the
+        Host just re-provisioned (a running agent replays its old credentials
+        until it reloads them).  Nothing here is reachable without admin rights
+        or physical access to the Host, so an attacker cannot clear their own
+        penalty — counting simply restarts from zero for every client.
+        """
+        blocked = len(self._backoff_until)
+        recorded = len(self._fail_ts)
+        self._fail_ts.clear()
+        self._fail_streak.clear()
+        self._backoff_until.clear()
+        if blocked or recorded:
+            log.info("[ROOM] join failures cleared (%s) recorded=%d blocked=%d",
+                     reason, recorded, blocked)
 
     def join(self, *, room_code: str, password: str, node_name: str | None,
              role: str, ip: str, now: float | None = None,
@@ -444,6 +469,7 @@ class Room:
             self.generation += 1
             n = self._revoke_all_unlocked(now, store_audit=store_audit, ip=ip)
             self._clear_passwords_unlocked()
+            self._clear_join_failures_unlocked("room closed")
             log.info("[ROOM] lifecycle_close gen=%d revoked=%d",
                      self.generation, n)
             return n

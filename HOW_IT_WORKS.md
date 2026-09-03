@@ -72,7 +72,7 @@ Wizard yêu cầu node name, Host URL và worker password. `localhost` bị từ
 
 ## Dữ liệu ESG
 
-ESG có ba lớp độc lập: **ĐO THẬT** (sensor), **SUY RA** (mô hình) và **DỰ PHÒNG** (tham chiếu). Các lớp không được cộng chung. Dashboard không hiển thị con số suy đoán lớn khi thiếu dữ liệu. Audit vận hành tách riêng và không ghi password, token, prompt hoặc nội dung trả lời LLM.
+ESG có ba lớp độc lập: **ĐO THẬT / MEASURED** (sensor), **SUY RA / DERIVED** (mô hình) và **NGOẠI SUY / PROJECTED** (chiếu quy mô — không phải “dự phòng” của linear forecast). Các lớp không được cộng chung. Dashboard không hiển thị con số suy đoán lớn khi thiếu dữ liệu. Audit vận hành tách riêng và không ghi password, token, prompt hoặc nội dung trả lời LLM.
 
 ## Chẩn đoán nhanh
 

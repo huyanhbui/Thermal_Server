@@ -126,6 +126,62 @@ public class AgentConfigLoadTests
     }
 
     [Fact]
+    public void Rotated_room_credentials_are_detected_but_endpoint_writes_are_not()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        var canonical = Path.Combine(root, "config.json");
+        var legacy = Path.Combine(root, "missing", "config.json");
+        var original = new AgentConfig("Host-A", "http://127.0.0.1:8000",
+            "THERMAL-AAAA", "mật-khẩu-cũ-đủ-dài");
+        AgentConfig.WriteProtectedConfig(canonical, original);
+        var loaded = AgentConfig.LoadFromPaths(canonical, legacy);
+
+        // Worker tự ghi lại endpoint sau mỗi lần join — không phải rotation.
+        AgentConfig.WriteProtectedConfig(canonical,
+            loaded with { LanUrl = "http://127.0.0.1:8000" });
+        Assert.True(loaded.HasSameJoinCredentials(
+            AgentConfig.LoadFromPaths(canonical, legacy)));
+
+        // Host tạo lại phòng: đổi cả mã phòng và mật khẩu worker.
+        AgentConfig.WriteProtectedConfig(canonical,
+            loaded with { RoomCode = "THERMAL-BBBB",
+                Password = "mật-khẩu-mới-đủ-dài" });
+        Assert.False(loaded.HasSameJoinCredentials(
+            AgentConfig.LoadFromPaths(canonical, legacy)));
+    }
+
+    [Fact]
+    public void A_failed_reload_still_retries_the_same_host_rewrite()
+    {
+        var stamp = new DateTime(2026, 8, 6, 3, 0, 0, DateTimeKind.Utc);
+        var gate = new ConfigReloadGate(() => stamp);
+        var rotated = new AgentConfig("Host-A", "https://host.example",
+            "THERMAL-BBBB", "mật-khẩu-mới-đủ-dài");
+        var failures = new List<Exception>();
+        var attempts = 0;
+        AgentConfig Load()
+        {
+            attempts++;
+            if (attempts == 1)
+                throw new IOException("config đang bị ghi");
+            return rotated;
+        }
+        stamp = stamp.AddSeconds(5);
+
+        Assert.False(gate.TryReload(Load, out _, failures.Add));
+        Assert.Single(failures);
+
+        // Lần ghi của Host chưa được ghi nhận: nạp lại phải thử tiếp cùng mốc.
+        Assert.True(gate.TryReload(Load, out var loaded, failures.Add));
+        Assert.Same(rotated, loaded);
+        Assert.Single(failures);
+
+        // Nạp xong mới đẩy mốc — không nạp lại vòng vo khi file không đổi.
+        Assert.False(gate.TryReload(Load, out _, failures.Add));
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
     public void FilterSecondary_warns_sanitized_when_rejected()
     {
         var warnings = new List<string>();

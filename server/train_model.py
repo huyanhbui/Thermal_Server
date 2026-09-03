@@ -1,14 +1,23 @@
 """Builds a supervised dataset from recorded telemetry and trains the
 Random Forest forecaster. Label = ΔT = max(CPU temp over next 3 min)
-minus current temp (ADR-004). Usage: python train_model.py
-(after a calibration run).
+minus current temp (ADR-004).
 
-Also: python train_model.py --eval  → report buffered time-split,
-leave-one-node-out, and linear baseline MAE.
+Usage (dev, CWD = server/):
+    python train_model.py
+    python train_model.py --eval
+
+Packaged Host (THERMAL_DATA_DIR set, e.g. ProgramData\\...\\shared):
+    set THERMAL_DATA_DIR=%ProgramData%\\ThermalOrchestrator\\shared
+    python train_model.py
+    # writes model.pkl next to telemetry.db in that data dir — same place
+    # make_state / Forecaster load after restart.
+
+Override paths anytime: --db PATH --out PATH
 """
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 import numpy as np
@@ -19,6 +28,20 @@ from store import TelemetryStore
 
 HORIZON_S = 180.0
 WINDOW_S = 180.0
+
+
+def _default_db_path() -> str:
+    data_dir = (os.environ.get("THERMAL_DATA_DIR") or "").strip()
+    if data_dir:
+        return os.path.join(data_dir, "telemetry.db")
+    return "telemetry.db"
+
+
+def _default_model_path() -> str:
+    data_dir = (os.environ.get("THERMAL_DATA_DIR") or "").strip()
+    if data_dir:
+        return os.path.join(data_dir, "model.pkl")
+    return "model.pkl"
 
 
 def build_dataset(store, horizon_s=HORIZON_S, window_s=WINDOW_S,
@@ -179,12 +202,14 @@ def run_eval(store):
     return 0
 
 
-def train_and_save(store, out_path="model.pkl"):
+def train_and_save(store, out_path: str | None = None):
     from sklearn.ensemble import RandomForestRegressor
     from sklearn.model_selection import train_test_split
     from sklearn.metrics import mean_absolute_error
     import joblib
 
+    if out_path is None:
+        out_path = _default_model_path()
     X, y, _meta = build_dataset(store)
     print(f"[TRAIN] dataset: {len(X)} samples from nodes {store.nodes()}")
     if len(X) < 100:
@@ -203,6 +228,9 @@ def train_and_save(store, out_path="model.pkl"):
         y_te, [_linear_delta(f) for f in X_te])
     print(f"[TRAIN] validation MAE ΔT: {mae:.2f}°C "
           f"(linear baseline {lin_mae:.2f}°C)")
+    out_dir = os.path.dirname(os.path.abspath(out_path))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     joblib.dump(model, out_path)
     print(f"[TRAIN] saved {out_path} - restart server.py to use it")
     if mae >= lin_mae * 0.95:
@@ -215,9 +243,13 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--eval", action="store_true",
                     help="Báo cáo 3 phép thử (không ghi model.pkl)")
-    ap.add_argument("--db", default="telemetry.db")
+    ap.add_argument("--db", default=None,
+                    help="Telemetry SQLite (default: data dir or ./telemetry.db)")
+    ap.add_argument("--out", default=None,
+                    help="Output model.pkl (default: data dir or ./model.pkl)")
     args = ap.parse_args()
-    store = TelemetryStore(args.db)
+    db_path = args.db or _default_db_path()
+    store = TelemetryStore(db_path)
     if args.eval:
         raise SystemExit(run_eval(store))
-    train_and_save(store)
+    train_and_save(store, out_path=args.out or _default_model_path())

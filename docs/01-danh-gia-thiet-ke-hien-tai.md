@@ -51,6 +51,8 @@ Ký hiệu mức độ: **S** = nghiêm trọng (chặn mục tiêu), **M** = tr
 
 ### S1 — Scheduler chấm điểm sẽ không hoạt động dưới cơ chế pull hiện tại
 
+> ✅ **Đã xử lý trong mã nguồn.** (Hoàn thành trước vòng Chung kết)
+
 **Bản thiết kế nói gì.** Mục 6.3 đưa ra công thức `score` với 5 số hạng có trọng số, kết luận: "*Host chấm điểm node → gán chat job*", "*pick best node*".
 
 **Code thực tế làm gì.** [`balancer.py:57`](../server/balancer.py) — chữ ký hàm là:
@@ -301,6 +303,8 @@ Chi phí đi kèm: với 10 node, mỗi 2 giây là 10 truy vấn cửa sổ SQL
 
 ### M7 — Không có trễ trong quyết định gắn cờ → node dao động quanh ngưỡng
 
+> ✅ **Đã xử lý trong mã nguồn.** (Hoàn thành trước vòng Chung kết)
+
 [`server.py:91-100`](../server/server.py) gắn cờ khi `pred >= threshold` và gỡ cờ khi `pred < threshold` — **cùng một điểm cắt**. Một node dao động quanh ngưỡng (rất phổ biến, vì dự báo có nhiễu ±1-2°C) sẽ bật/tắt cờ liên tục theo nhịp 5 giây.
 
 Hệ quả: job nhảy qua nhảy lại giữa các node; ESG cộng dồn theo cụm nhấp nháy; nhật ký ngập dòng flag/clear; và với chat LLM thì tệ hơn nhiều so với burn job — một job chat đang chạy dở bị dời máy nghĩa là mất toàn bộ ngữ cảnh đã nạp (prompt processing) và phải làm lại từ đầu.
@@ -318,6 +322,8 @@ Nghịch lý cụ thể: `cpu_util` được lấy từ mẫu telemetry **gần 
 **Cách sửa.** Host tự theo dõi `inflight[node]` (số job đã gán mà chưa nhận kết quả) — đây là **sự thật tức thời**, không có độ trễ như telemetry. Thêm `w_load × (1 − inflight/max_concurrent)` vào score, và **giới hạn cứng `max_concurrent = 1`** cho suy luận LLM trên CPU.
 
 ### M9 — Bộ sinh tải demo luôn bật
+
+> ✅ **Đã xử lý trong mã nguồn.** (Hoàn thành trước vòng Chung kết)
 
 [`server.py:216-222`](../server/server.py) `_generator_loop` bơm burn job mỗi 4 giây, vô điều kiện, ngay khi server khởi động ([`server.py:146-147`](../server/server.py)).
 

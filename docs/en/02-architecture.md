@@ -10,5 +10,8 @@ revoked on restart, close, or credential rotation. The Host local agent uses
 the same NodeAgent, SensorReader, and llama.cpp path as a remote worker rather
 than a server-side pseudo-node.
 
-Important boundaries are sensor versus model data, measured versus inferred ESG
-data, and ordinary compute scheduling versus LLM model-readiness scheduling.
+Important boundaries are sensor versus model data, **MEASURED / DERIVED /
+PROJECTED** ESG layers (never summed), and ordinary compute scheduling versus
+LLM model-readiness scheduling. Thermal forecast provenance is separate:
+`forecast_source` is `ml` or `linear_fallback` — do not confuse ESG PROJECTED
+with forecast fallback.

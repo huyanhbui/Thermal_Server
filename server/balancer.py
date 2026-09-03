@@ -16,7 +16,7 @@ BURN_LEASE_GRACE_S = 5.0
 
 
 class LoadBalancer:
-    def __init__(self, max_queue=10):
+    def __init__(self, max_queue=32):
         self.max_queue = max_queue
         self._queue = deque()       # pending + reserved (target set)
         self._flags = set()

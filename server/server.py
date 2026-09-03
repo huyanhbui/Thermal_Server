@@ -225,7 +225,7 @@ def _runtime_data_path(path: str) -> str:
 
     Chỉ áp dụng với tên tệp một cấp để test/dev còn có thể truyền fixture hay
     đường dẫn tương đối riêng. Runtime installer luôn cung cấp
-    ``THERMAL_DATA_DIR`` nên settings/room.json không còn phụ thuộc CWD.
+    ``THERMAL_DATA_DIR`` nên settings/room.json/model.pkl không còn phụ thuộc CWD.
     """
     if (os.environ.get("THERMAL_DATA_DIR") or "").strip() and (
             not os.path.isabs(path) and os.path.dirname(path) in ("", ".")):
@@ -248,6 +248,7 @@ def make_state(db_path: str | None = None, model_path="model.pkl",
     from rate_limit import TokenRateLimiter
     from tunnel import TunnelManager
     from room_persist import default_room_json_path, load_room_meta
+    model_path = _runtime_data_path(model_path)
     if db_path is None:
         from data_paths import prepare_database_path
         db_path = prepare_database_path(legacy_paths=_legacy_database_paths())
@@ -402,11 +403,54 @@ def _set_local_agent_state(state: AppState, name: str, message: str,
     })
 
 
-def _launch_local_agent(state: AppState, *, worker_password: str | None = None) -> dict:
+def _write_local_agent_config(state: AppState, node: str, config_path: str,
+                              worker_password: str) -> None:
+    """Store the room credentials the Host worker joins with, DPAPI-protected.
+
+    The agent binary owns the encryption, so the plaintext only crosses the pipe
+    to that short-lived child: never a command line, JSON metadata, or an audit
+    row.  Writing is also the only channel the Host needs for a rotation — a
+    running worker reloads this file, so no secret ever goes over the network.
+    """
+    executable = _local_agent_executable()
+    if executable is None:
+        _set_local_agent_state(state, "error",
+                               "Không tìm thấy NodeAgent.exe.", node)
+        raise ApiError(503, "LOCAL_AGENT_MISSING",
+                       "Không tìm thấy NodeAgent.exe. Hãy build/publish agent.")
+    provision = json.dumps({
+        "nodeName": node,
+        "serverUrl": f"http://127.0.0.1:{SERVER_PORT}",
+        "roomCode": state.room.room_code,
+        "password": worker_password,
+    })
+    try:
+        protected = subprocess.run(
+            [executable, "--protect-config", config_path], input=provision,
+            text=True, capture_output=True, timeout=20, check=False)
+    except OSError as exc:
+        _set_local_agent_state(state, "error",
+                               "Không chạy được NodeAgent để tạo cấu hình.", node)
+        raise ApiError(503, "LOCAL_AGENT_FAILED",
+                       "Không chạy được NodeAgent để tạo cấu hình.") from exc
+    if protected.returncode != 0:
+        _set_local_agent_state(state, "error",
+                               "NodeAgent từ chối cấu hình cục bộ.", node)
+        raise ApiError(503, "LOCAL_AGENT_FAILED",
+                       "NodeAgent từ chối cấu hình cục bộ.")
+
+
+def _launch_local_agent(state: AppState, *, worker_password: str | None = None,
+                        replace_process: bool = False) -> dict:
     """Provision a DPAPI config, then request an elevated NodeAgent launch.
 
     Password travels only through the short-lived child's standard input; it
     is never placed on a command line, in JSON metadata, or in an audit row.
+
+    ``replace_process`` belongs to the operator's explicit retry: it also swaps
+    a running worker so a build that predates config reloading cannot leave the
+    Host without one.  Automatic paths never set it, because rewriting the
+    config already delivers the credentials without a second UAC prompt.
     """
     if not state.room.has_password():
         raise ApiError(409, "ROOM_NOT_READY", "Phòng chưa có mật khẩu.")
@@ -416,13 +460,28 @@ def _launch_local_agent(state: AppState, *, worker_password: str | None = None) 
         return dict(state.local_agent)
     node = _local_agent_node_name()
     config_path = _local_agent_config_path()
-    # Retry/UAC can be clicked repeatedly while the first elevated process is
-    # already alive. A second NodeAgent would start a second llama-server and
-    # make the Host contend with itself for CPU/RAM.
-    if _local_agent_process_running():
-        _set_local_agent_state(
-            state, "joining",
-            "Host agent đã chạy; đang chờ telemetry và model readiness.", node)
+    running = _local_agent_process_running()
+    config_written = False
+    if running and worker_password is not None:
+        # Creating a room rotates its code and worker password, and the running
+        # worker replays the previous pair until it reloads this file.  Writing
+        # the config is therefore what delivers the new credentials: it needs no
+        # elevation, so it works even when the Host cannot touch the elevated
+        # agent at all.
+        _write_local_agent_config(state, node, config_path, worker_password)
+        config_written = True
+        log.info("[AGENT] rewrote the protected config of the running Host "
+                 "agent for the new room credentials")
+        if replace_process:
+            running = _stop_packaged_local_agent() == 0
+    if running:
+        # Retry/UAC can be clicked repeatedly while the first elevated process
+        # is already alive.  A second NodeAgent would start a second
+        # llama-server and make the Host contend with itself for CPU/RAM.
+        message = "Host agent đã chạy; đang chờ telemetry và model readiness."
+        if config_written:
+            message = "Đã cập nhật cấu hình; Host agent đang tham gia phòng mới."
+        _set_local_agent_state(state, "joining", message, node)
         return dict(state.local_agent)
     _set_local_agent_state(state, "starting", "Đang tạo cấu hình Host agent.",
                            node)
@@ -437,38 +496,19 @@ def _launch_local_agent(state: AppState, *, worker_password: str | None = None) 
                                    "Không khởi chạy được NodeAgent.", node)
             raise ApiError(503, "LOCAL_AGENT_FAILED",
                            "Không khởi chạy được NodeAgent.")
+    if worker_password is not None and not config_written:
+        _write_local_agent_config(state, node, config_path, worker_password)
+    elif worker_password is None and not os.path.isfile(config_path):
+        _set_local_agent_state(state, "error",
+                               "Thiếu cấu hình Host agent đã mã hóa.", node)
+        raise ApiError(409, "LOCAL_AGENT_CREDENTIALS_UNAVAILABLE",
+                       "Hãy tạo lại hoặc đổi mật khẩu phòng trên Host.")
     executable = _local_agent_executable()
     if executable is None:
         _set_local_agent_state(state, "error",
                                "Không tìm thấy NodeAgent.exe.", node)
         raise ApiError(503, "LOCAL_AGENT_MISSING",
                        "Không tìm thấy NodeAgent.exe. Hãy build/publish agent.")
-    if worker_password is not None:
-        provision = json.dumps({
-            "nodeName": node,
-            "serverUrl": f"http://127.0.0.1:{SERVER_PORT}",
-            "roomCode": state.room.room_code,
-            "password": worker_password,
-        })
-        try:
-            protected = subprocess.run(
-                [executable, "--protect-config", config_path], input=provision,
-                text=True, capture_output=True, timeout=20, check=False)
-        except OSError as exc:
-            _set_local_agent_state(state, "error",
-                                   "Không chạy được NodeAgent để tạo cấu hình.", node)
-            raise ApiError(503, "LOCAL_AGENT_FAILED",
-                           "Không chạy được NodeAgent để tạo cấu hình.") from exc
-        if protected.returncode != 0:
-            _set_local_agent_state(state, "error",
-                                   "NodeAgent từ chối cấu hình cục bộ.", node)
-            raise ApiError(503, "LOCAL_AGENT_FAILED",
-                           "NodeAgent từ chối cấu hình cục bộ.")
-    elif not os.path.isfile(config_path):
-        _set_local_agent_state(state, "error",
-                               "Thiếu cấu hình Host agent đã mã hóa.", node)
-        raise ApiError(409, "LOCAL_AGENT_CREDENTIALS_UNAVAILABLE",
-                       "Hãy tạo lại hoặc đổi mật khẩu phòng trên Host.")
     # ShellExecute/runas produces the UAC prompt.  It does not receive any
     # secret and uses the protected file beside the executable.
     escaped_executable = executable.replace("'", "''")
@@ -488,7 +528,13 @@ def _launch_local_agent(state: AppState, *, worker_password: str | None = None) 
 
 
 def _local_agent_process_running() -> bool:
-    """Best-effort guard so a Host restart never creates a second agent."""
+    """Best-effort guard so a Host restart never creates a second agent.
+
+    Matching the image name alone is deliberate here: it errs towards "one is
+    already running", and the cost of a false positive is a deferred start the
+    dashboard can retry — never a terminated process, which is decided by
+    ``_stop_packaged_local_agent`` from the image path instead.
+    """
     if os.name != "nt":
         return False
     try:
@@ -500,6 +546,77 @@ def _local_agent_process_running() -> bool:
     # Test runners and restricted process queries can omit stdout; treat that as
     # "not found" instead of letting a retry endpoint fail with AttributeError.
     return "NodeAgent.exe" in (getattr(result, "stdout", "") or "")
+
+
+def _local_agent_processes() -> list[tuple[int, str | None]]:
+    """Every NodeAgent process with its image path when Windows discloses it.
+
+    ``Win32_Process`` is used rather than ``Process.MainModule``: reading the
+    path of an elevated agent from the unelevated Host works through the CIM
+    provider, and a process whose path stays hidden is reported as ``None`` so
+    callers can treat it as "not attributable" instead of guessing.
+    """
+    if os.name != "nt":
+        return []
+    script = (
+        "Get-CimInstance Win32_Process -Filter \"Name='NodeAgent.exe'\" | "
+        "ForEach-Object { \"$($_.ProcessId)|$($_.ExecutablePath)\" }")
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            text=True, capture_output=True, timeout=20, check=False)
+    except OSError:
+        log.warning("[AGENT] could not enumerate NodeAgent processes")
+        return []
+    found: list[tuple[int, str | None]] = []
+    for line in (getattr(result, "stdout", "") or "").splitlines():
+        pid_text, _, path = line.strip().partition("|")
+        if not pid_text.isdigit():
+            continue
+        found.append((int(pid_text), path.strip() or None))
+    return found
+
+
+def _stop_packaged_local_agent() -> int:
+    """Stop only the NodeAgent started from this install, and its llama child.
+
+    A NodeAgent whose image path is not this payload may be a worker joined to
+    somebody else's room, so it is left running instead of being killed by image
+    name.  Terminating an elevated agent also fails when the Host itself is not
+    elevated; that is reported as "nothing stopped" so the caller falls back to
+    the config it has already rewritten.  Returns the number of processes that
+    really went away.
+    """
+    executable = _local_agent_executable()
+    if executable is None:
+        return 0
+    target = os.path.normcase(os.path.abspath(executable))
+    stopped = 0
+    unattributed = 0
+    for pid, path in _local_agent_processes():
+        if path is None:
+            unattributed += 1
+            continue
+        if os.path.normcase(os.path.abspath(path)) != target:
+            continue
+        try:
+            killed = subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F", "/T"],
+                capture_output=True, text=True, timeout=10, check=False)
+        except OSError:
+            log.warning("[AGENT] could not stop Host agent pid=%d", pid)
+            continue
+        if getattr(killed, "returncode", 1) != 0:
+            log.warning("[AGENT] Windows refused to stop Host agent pid=%d — "
+                        "keeping it and relying on the rewritten config", pid)
+            continue
+        stopped += 1
+        log.info("[AGENT] stopped packaged Host agent pid=%d to apply the new "
+                 "room credentials", pid)
+    if unattributed:
+        log.warning("[AGENT] left %d NodeAgent process(es) alone — no readable "
+                    "image path to attribute them to this install", unattributed)
+    return stopped
 
 
 def _restore_local_agent(state: AppState) -> None:
@@ -542,7 +659,10 @@ def refresh_weather(state: AppState, now: float) -> None:
     """Fetch thời tiết (blocking) rồi cập nhật ESG từ cache."""
     if state.weather is None:
         return
-    site = state.settings.get().get("site_id") or "hanoi-office-4f"
+    site = (
+        state.weather.config.get("default_site_id")
+        or state.settings.get().get("site_id")
+        or "hanoi-office-4f")
     try:
         state.weather.refresh_all(now)
         apply_weather_to_esg(
@@ -1722,24 +1842,22 @@ class JobEventBody(BaseModel):
     timing: dict | None = None
 
 
-def _qr_svg_data_url(text: str) -> str:
-    """SVG tối thiểu chứa link mời (không thêm phụ thuộc qrcode)."""
-    import base64
-    import html as _html
-    safe = _html.escape((text or "")[:240])
-    svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="280" height="280">'
-        '<rect width="100%" height="100%" fill="#fff" stroke="#222" '
-        'stroke-width="4"/>'
-        '<text x="140" y="28" text-anchor="middle" font-size="13" '
-        'font-family="Segoe UI,sans-serif">Link mời phòng</text>'
-        '<foreignObject x="12" y="44" width="256" height="220">'
-        '<div xmlns="http://www.w3.org/1999/xhtml" style="'
-        "font:12px Consolas,monospace;word-break:break-all;padding:8px;"
-        f'color:#111">{safe}</div></foreignObject></svg>'
-    )
-    b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-    return f"data:image/svg+xml;base64,{b64}"
+class WeatherReadingBody(BaseModel):
+    """Browser-fetched OWM snapshot — never includes the API key."""
+    temp_c: float = Field(ge=-80.0, le=80.0)
+    feels_like_c: float | None = Field(default=None, ge=-80.0, le=80.0)
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+    label: str | None = Field(default=None, max_length=80)
+    source: str = Field(default="owm_gps", max_length=32)
+    site_id: str = Field(default="gps-host", max_length=64)
+
+    @field_validator("temp_c", "feels_like_c", "lat", "lon", mode="before")
+    @classmethod
+    def reject_bool(cls, value):
+        if isinstance(value, bool):
+            raise ValueError("boolean is not a measurement")
+        return value
 
 
 def _check_default_quota(state, auth):
@@ -1781,6 +1899,112 @@ def _chat_deadline_s(max_tokens: int) -> float:
     override this through the catalog later without changing the API seam.
     """
     return float(max(60, min(600, 30 + int(max_tokens) * 2)))
+
+
+def compute_ab_summary(events: list[dict]) -> dict:
+    """Tổng hợp số liệu so sánh A/B giữa Thermal-Aware và Round-Robin từ esg_events."""
+    stats = {
+        "thermal_aware": {
+            "total_jobs": 0,
+            "max_temp_c": None,
+            "total_energy_j": 0.0,
+            "total_tokens_out": 0,
+            "energy_per_token_j": None,
+        },
+        "round_robin": {
+            "total_jobs": 0,
+            "max_temp_c": None,
+            "total_energy_j": 0.0,
+            "total_tokens_out": 0,
+            "energy_per_token_j": None,
+        },
+    }
+
+    temps: dict[str, list[float]] = {"thermal_aware": [], "round_robin": []}
+
+    for ev in events:
+        etype = (ev.get("event_type") or "").strip().lower()
+        if etype not in ("job_complete", "job_completed"):
+            continue
+
+        detail = ev.get("detail")
+        if not isinstance(detail, dict):
+            continue
+
+        raw_mode = str(detail.get("scheduler_mode") or "").strip().lower().replace("-", "_")
+        if raw_mode not in ("thermal_aware", "round_robin"):
+            continue
+
+        target = stats[raw_mode]
+        target["total_jobs"] += 1
+
+        # Nhiệt độ đỉnh (peak_temp_c)
+        pt = detail.get("peak_temp_c")
+        if pt is not None:
+            try:
+                val = float(pt)
+                if not math.isnan(val) and not math.isinf(val):
+                    temps[raw_mode].append(val)
+            except (ValueError, TypeError):
+                pass
+
+        # Năng lượng tiêu thụ (energy_j)
+        ej = detail.get("energy_j")
+        if ej is not None:
+            try:
+                val = float(ej)
+                if not math.isnan(val) and not math.isinf(val):
+                    target["total_energy_j"] += val
+            except (ValueError, TypeError):
+                pass
+
+        # Token xuất ra (tokens_out)
+        to = detail.get("tokens_out")
+        if to is not None:
+            try:
+                val = int(to)
+                if val > 0:
+                    target["total_tokens_out"] += val
+            except (ValueError, TypeError):
+                pass
+
+    for mode in ("thermal_aware", "round_robin"):
+        if temps[mode]:
+            stats[mode]["max_temp_c"] = round(max(temps[mode]), 2)
+        else:
+            stats[mode]["max_temp_c"] = None
+
+        tot_tok = stats[mode]["total_tokens_out"]
+        tot_ej = stats[mode]["total_energy_j"]
+        if tot_tok > 0 and tot_ej > 0:
+            stats[mode]["energy_per_token_j"] = round(tot_ej / tot_tok, 4)
+        else:
+            stats[mode]["energy_per_token_j"] = None
+
+        stats[mode]["total_energy_j"] = round(stats[mode]["total_energy_j"], 2)
+
+    # Tính toán chênh lệch so sánh
+    ta_jpt = stats["thermal_aware"]["energy_per_token_j"]
+    rr_jpt = stats["round_robin"]["energy_per_token_j"]
+    savings_pct = None
+    if ta_jpt is not None and rr_jpt is not None and rr_jpt > 0:
+        savings_pct = round(((rr_jpt - ta_jpt) / rr_jpt) * 100.0, 1)
+
+    ta_max_t = stats["thermal_aware"]["max_temp_c"]
+    rr_max_t = stats["round_robin"]["max_temp_c"]
+    temp_diff_c = None
+    if ta_max_t is not None and rr_max_t is not None:
+        temp_diff_c = round(rr_max_t - ta_max_t, 1)
+
+    return {
+        "ok": True,
+        "thermal_aware": stats["thermal_aware"],
+        "round_robin": stats["round_robin"],
+        "comparison": {
+            "energy_savings_pct": savings_pct,
+            "temp_reduction_c": temp_diff_c,
+        },
+    }
 
 
 def create_app(state):
@@ -1837,6 +2061,12 @@ def create_app(state):
     def api_version():
         """Public, secret-free compatibility revision for the static dashboard."""
         return {"api_revision": API_REVISION}
+
+    @app.get("/api/ab_summary")
+    def ab_summary():
+        """Báo cáo so sánh A/B giữa Thermal-Aware và Round-Robin."""
+        events = state.store.esg_events()
+        return compute_ab_summary(events)
 
     @app.get("/join")
     def join_get(code: str | None = None):
@@ -2137,7 +2367,11 @@ p{{line-height:1.55;color:#c5d2e6}}</style><main><h1>Tham gia làm máy khách</
         """Accept ordered inference deltas from an outbound worker only."""
         if auth.role != "worker" or not auth.node:
             raise ApiError(403, "FORBIDDEN", "Chỉ worker mới gửi stream.")
-        _check_default_quota(state, auth)
+        from rate_limit import JOB_EVENTS_MAX, JOB_EVENTS_WINDOW_S
+        if state.rate_limiter is not None:
+            state.rate_limiter.check(
+                "job_events", auth.token_hash,
+                max_hits=JOB_EVENTS_MAX, window_s=JOB_EVENTS_WINDOW_S)
         now = time.time()
         with state.lifecycle.mutation_section():
             state.lifecycle.require_alive(state.room, auth, now=now)
@@ -2237,6 +2471,7 @@ p{{line-height:1.55;color:#c5d2e6}}</style><main><h1>Tham gia làm máy khách</
                 "text": info.get("text"),
                 "node": info.get("node"),
                 "duration_ms": info.get("duration_ms"),
+                "tokens_in": info.get("tokens_in"),
                 "tokens_out": info.get("tokens_out"),
             })
         elif info["status"] == "error":
@@ -2501,7 +2736,12 @@ p{{line-height:1.55;color:#c5d2e6}}</style><main><h1>Tham gia làm máy khách</
                 and len(worker_password.strip()) < PASSWORD_MIN_LENGTH):
             raise ApiError(400, "BAD_REQUEST",
                            "Mật khẩu worker phải ≥12 ký tự Unicode.")
-        status = _launch_local_agent(state, worker_password=worker_password)
+        # An operator retrying with the worker password is asking for a worker
+        # that works now, so this is the one path allowed to replace a running
+        # agent instead of only handing it new credentials.
+        status = _launch_local_agent(
+            state, worker_password=worker_password,
+            replace_process=worker_password is not None)
         return {"ok": True, "local_agent": status}
 
     @app.post("/api/room/reopen-bootstrap")
@@ -2546,14 +2786,56 @@ p{{line-height:1.55;color:#c5d2e6}}</style><main><h1>Tham gia làm máy khách</
 
     @app.get("/api/room/invite")
     def room_invite(auth: AuthContext = Depends(require_admin)):
-        """Link mời + data URL QR tối thiểu (SVG)."""
+        """Invite URLs for LAN/tunnel — QR is generated client-side."""
         _check_default_quota(state, auth)
-        inv = _invite_urls(state)
-        primary = inv.get("invite_tunnel") or inv.get("invite_lan") or ""
         return {
             "ok": True,
             "room": _room_public_payload(state, time.time()),
-            "qr_svg_data_url": _qr_svg_data_url(primary) if primary else None,
+        }
+
+    @app.post("/api/weather/reading")
+    def weather_reading(body: WeatherReadingBody,
+                        auth: AuthContext = Depends(require_admin)):
+        """Ingest browser OWM reading (API key stays in localStorage)."""
+        _check_default_quota(state, auth)
+        if state.weather is None:
+            raise ApiError(503, "WEATHER_UNAVAILABLE",
+                           "Weather service is not available.")
+        # Never accept or log an API key field if a client sends one.
+        raw = body.model_dump()
+        if "api_key" in raw or "appid" in raw:
+            raise ApiError(422, "BAD_REQUEST",
+                           "API key must not be sent to the server.")
+        now = time.time()
+        src = (body.source or "owm_gps").strip() or "owm_gps"
+        if src not in ("owm_gps", "owm_manual", "cache"):
+            src = "owm_gps"
+        entry = state.weather.ingest_client_reading(
+            temp_c=body.temp_c,
+            feels_like_c=body.feels_like_c,
+            lat=body.lat,
+            lon=body.lon,
+            now=now,
+            site_id=(body.site_id or "gps-host").strip() or "gps-host",
+            label=body.label,
+            source=src,
+        )
+        apply_weather_to_esg(
+            state.weather, state.esg.config,
+            site_id=entry["site_id"], now=now)
+        _invalidate_state_cache(state)
+        return {
+            "ok": True,
+            "reading": {
+                "site_id": entry["site_id"],
+                "temp_c": entry["temp_c"],
+                "feels_like_c": entry["feels_like_c"],
+                "lat": entry["lat"],
+                "lon": entry["lon"],
+                "label": entry["label"],
+                "source": entry["client_source"],
+                "updated_at": entry["updated_at"],
+            },
         }
 
     @app.get("/api/esg.csv")
@@ -2634,10 +2916,26 @@ p{{line-height:1.55;color:#c5d2e6}}</style><main><h1>Tham gia làm máy khách</
                         headers={"Content-Disposition":
                                  "attachment; filename=esg_report.csv"})
 
+    def _dashboard_html():
+        path = os.path.join(os.path.dirname(__file__), "static",
+                            "dashboard.html")
+        return FileResponse(path)
+
     @app.get("/")
     def index():
-        path = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
-        return FileResponse(path)
+        return _dashboard_html()
+
+    @app.get("/landing")
+    def landing_page():
+        return _dashboard_html()
+
+    @app.get("/login")
+    def login_page():
+        return _dashboard_html()
+
+    @app.get("/app")
+    def app_page():
+        return _dashboard_html()
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):

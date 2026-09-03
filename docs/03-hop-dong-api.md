@@ -64,6 +64,7 @@ Sửa lỗi [S2](01-danh-gia-thiet-ke-hien-tai.md#s2--không-có-xác-thực-tr�
 | `POST /api/room/bootstrap` | ✅ chưa mật khẩu **và** loopback | — | ✅ (đổi cấu hình) |
 | `POST /api/room/close` | ❌ | ❌ | ✅ |
 | `GET /api/room/invite` | ❌ | ❌ | ✅ |
+| `POST /api/weather/reading` | ❌ | ❌ | ✅ |
 | `POST /nodes/ready` | ❌ | ✅ | ✅ |
 | `POST /ingest` | ❌ | ✅ | ✅ |
 | `GET /jobs/next` | ❌ | ✅ | ✅ |
@@ -74,10 +75,13 @@ Sửa lỗi [S2](01-danh-gia-thiet-ke-hien-tai.md#s2--không-có-xác-thực-tr�
 | `GET /api/models` | ❌ | ❌ | ✅ |
 | `POST /api/nodes/{node}/kick` | ❌ | ❌ | ✅ |
 | `GET /api/esg.csv` | ❌ | ❌ | ✅ |
-| `GET /` (dashboard) | ✅ trang đăng nhập | — | ✅ |
+| `GET /` (dashboard) | ✅ landing / đăng nhập / app | — | ✅ |
+| `GET /landing`, `/login`, `/app` | ✅ cùng `dashboard.html` | — | ✅ |
 | `WS /ws` | ❌ | ✅ (rút gọn) | ✅ (đầy đủ) |
 
 **Quy tắc bất di bất dịch:** danh tính node được suy ra **từ token**. Nếu thân yêu cầu có trường `node` khác với node gắn với token, server trả `403 IDENTITY_MISMATCH` và ghi vào `room_audit`. Không bao giờ tin `?node=` như [`server.py:162`](../server/server.py) đang làm.
+
+**Đường UI (cùng một file).** `GET /`, `/landing`, `/login`, `/app` đều phục vụ `static/dashboard.html`. Client đồng bộ path bằng `history.pushState` khi đổi view. `GET /join?code=…` vẫn **302** về `/?code=…` — không đổi hợp đồng invite/agent.
 
 ---
 
@@ -205,7 +209,32 @@ Mở lại tạo phòng **không cần** Bearer admin — chỉ khi client **loo
 
 ### `GET /api/room/invite`
 
-Chỉ admin. Trả link mời + `qr_svg_data_url` (SVG tối thiểu, không phụ thuộc lib QR).
+Admin only. Returns invite URLs inside `room` (LAN, tunnel, worker-setup).
+QR codes are generated **client-side** in the dashboard — the API does **not**
+return `qr_svg_data_url`.
+
+### `POST /api/weather/reading`
+
+Admin only. Ingests a weather reading that the **browser** fetched from
+OpenWeatherMap using an API key stored only in `localStorage` on the host.
+The API key must never appear in the request body.
+
+```json
+{
+  "temp_c": 31.5,
+  "feels_like_c": 36.0,
+  "lat": 21.0285,
+  "lon": 105.8542,
+  "label": "GPS host",
+  "source": "owm_gps",
+  "site_id": "gps-host"
+}
+```
+
+`200 {"ok": true, "reading": { ... }}`
+
+Updates `WeatherService` cache and ESG `outdoor_temp_c`. Snapshot appears under
+`GET /api/state` → `weather`.
 
 ### `POST /nodes/ready`
 
@@ -345,13 +374,13 @@ văn payload quá giới hạn.
 ### `POST /chat`
 
 ```json
-{ "prompt": "…", "max_tokens": 512, "temperature": 0.7, "stream": false }
+{ "prompt": "…", "max_tokens": 4096, "temperature": 0.7, "stream": false }
 ```
 
 `prompt` là bắt buộc và tối đa **32.768 ký tự**. Vượt giới hạn trả `422
 BAD_REQUEST`; giao diện phải yêu cầu người dùng rút gọn prompt trước khi gửi
 lại. Các giới hạn `max_tokens` (1–4.096) và `temperature` (0,0–2,0) cũng trả
-`422 BAD_REQUEST` khi vi phạm.
+`422 BAD_REQUEST` khi vi phạm. Dashboard gửi `max_tokens: 4096` (trần API).
 
 **`202 Accepted`** — trả ngay, không chờ suy luận xong:
 ```json
@@ -364,9 +393,11 @@ Kết quả đến qua WebSocket (§8) hoặc `GET /chat/{job_id}`.
 
 ### `GET /chat/{job_id}`
 
-`200` kèm `{"status": "queued" | "running" | "done" | "error", …}`. Khi `done` có thêm `text`, `node` (máy đã chạy), `duration_ms`, `tokens_out`.
+`200` kèm `{"status": "queued" | "running" | "done" | "error", …}`. Khi `done` có thêm `text`, `node` (máy đã chạy), `duration_ms`, `tokens_in`, `tokens_out`.
 
 Trường `node` là thứ giao diện dùng để hiển thị *"chạy trên Node-B"* — nó biến việc điều phối thành thứ nhìn thấy được, và đó chính là điểm demo.
+
+Giới hạn hàng đợi chat mặc định: **32** job đang chờ. `POST /chat` bị rate-limit **60 lần/phút/token** (xem [06](06-bao-mat-va-quyen-rieng-tu.md)).
 
 ---
 
@@ -381,7 +412,6 @@ Thay thế [`server.py:171`](../server/server.py). **Đọc từ cache dự báo
   "api_version": 1,
   "room": { "code": "THERMAL-4F2A", "name": "Phòng 4F", "worker_count": 3, "capacity": 10 },
   "threshold_c": 75.0,
-  "model_status": { "forecaster": "random_forest", "per_node_models": ["Node-A"] },
   "queue": { "chat_pending": 2, "chat_running": 1 },
   "nodes": [
     {
@@ -431,10 +461,21 @@ Thay thế [`server.py:171`](../server/server.py). **Đọc từ cache dự báo
     }
   },
   "weather": {
-    "hanoi-office-4f": { "temp_c": 34.0, "feels_like_c": 41.0, "updated_at": 1735689000.0 }
-  }
+    "gps-host": {
+      "temp_c": 34.0,
+      "feels_like_c": 41.0,
+      "updated_at": 1735689000.0,
+      "source": "owm_gps",
+      "label": "GPS host",
+      "lat": 21.0285,
+      "lon": 105.8542
+    }
+  },
+  "forecast_source": "ml"
 }
 ```
+
+`forecast_source` là `"ml"` khi Forecaster đã nạp `model.pkl` (data dir / `THERMAL_DATA_DIR`), ngược lại `"linear_fallback"`. Dashboard phải hiện provenance đó — không trình fallback như ML đã huấn luyện.
 
 Ba khối ESG **là ba đối tượng riêng biệt trong JSON**. Đây là quyết định thiết kế có chủ đích: nó khiến việc cộng gộp ba tầng trở nên khó về mặt cú pháp, không chỉ bị cấm bằng lời — xem [ADR-003](adr/ADR-003-esg-ba-tang.md).
 

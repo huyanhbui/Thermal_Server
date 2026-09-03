@@ -262,7 +262,21 @@ Giữ nguyên logic hiện có ([`forecaster.py:36-38`](../server/forecaster.py)
 
 Trần `FALLBACK_CAP_C = 20°C` chặn trường hợp một dốc nhất thời ngoại suy thành con số vô lý.
 
-Badge trên dashboard phải nói rõ **"dự phòng (chưa huấn luyện)"** — PoC đã làm đúng điều này ([`dashboard.html:81`](../server/static/dashboard.html)), giữ nguyên.
+`/api/state` trả `forecast_source`: `"ml"` khi đã nạp `model.pkl`, còn không thì `"linear_fallback"`. Badge dashboard (tiếng Anh): **"Forecast: ML model"** hoặc **"Forecast: Linear fallback (not ML)"** — không được trình fallback như đã huấn luyện.
+
+### Đường dẫn `model.pkl`
+
+Khi `THERMAL_DATA_DIR` được set (Host đóng gói: `%ProgramData%\ThermalOrchestrator\shared`), Forecaster và `train_model.py` đều đọc/ghi `model.pkl` **trong data dir đó**, cùng chỗ với `telemetry.db` — không còn phụ thuộc CWD của tiến trình Host.
+
+```
+# Dev (CWD = server/)
+python train_model.py
+
+# Host đóng gói
+set THERMAL_DATA_DIR=%ProgramData%\ThermalOrchestrator\shared
+python train_model.py
+# → ghi shared\model.pkl; restart Host → forecast_source=ml
+```
 
 ### Khởi động nguội
 

@@ -124,9 +124,13 @@ hashlib.pbkdf2_hmac('sha256', pw.encode(), salt, 600_000)
 | Endpoint | Giới hạn | Vượt thì |
 |---|---|---|
 | `POST /join` | 5 lần/phút/IP | 429 + backoff lũy thừa (2s, 4s, 8s… trần 5 phút) |
-| `POST /ingest` | 2 lần/giây/token | 429 |
-| `POST /chat` | 10 lần/phút/token | 429 |
-| Các endpoint khác | 60 lần/phút/token | 429 |
+| `POST /ingest` | 2 lần/giây/token (`INGEST_MAX`) | 429 |
+| `POST /chat` | 60 lần/phút/token (`CHAT_MAX`) | 429 |
+| `GET /jobs/next` (và nhóm job pull) | 30 lần/phút/token (`JOBS_MAX`) | 429 |
+| `POST /jobs/.../events` (streaming delta) | 600 lần/phút/token (`JOB_EVENTS_MAX`) | 429 |
+| Các endpoint khác (mặc định) | 60 lần/phút/token (`DEFAULT_MAX`) | 429 |
+
+`JOB_EVENTS` tách khỏi quota mặc định: một phản hồi chat dài (nhiều delta token) không được làm cạn 60/phút của admin/worker.
 
 **Giới hạn `/join` là bắt buộc, không phải tùy chọn.** Không có nó, một mật khẩu 8 ký tự bị dò qua tunnel trong vài giờ. Có nó, thời gian dò kéo dài tới mức không thực tế.
 

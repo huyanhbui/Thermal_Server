@@ -70,13 +70,42 @@ if (testMode)
     return;
 }
 
+try
+{
+    Console.OutputEncoding = Encoding.UTF8;
+    Console.InputEncoding = Encoding.UTF8;
+}
+catch { /* some hosts disallow console reconfigure */ }
+
 var logPath = Path.Combine(AppContext.BaseDirectory, "agent.log");
 void Log(string msg)
 {
     var line = $"{DateTime.Now:HH:mm:ss} {msg}";
     Console.WriteLine(line);
-    try { File.AppendAllText(logPath, line + Environment.NewLine); } catch { }
+    try
+    {
+        File.AppendAllText(logPath, line + Environment.NewLine, Encoding.UTF8);
+    }
+    catch { }
 }
+var configPath = AgentConfig.ResolveConfigPath();
+var configReloadSync = new object();
+
+DateTime ConfigWriteStamp()
+{
+    try
+    {
+        return File.Exists(configPath)
+            ? File.GetLastWriteTimeUtc(configPath)
+            : default;
+    }
+    catch (Exception)
+    {
+        return default;
+    }
+}
+
+var configGate = new ConfigReloadGate(ConfigWriteStamp);
 var cfg = AgentConfig.Load(Log);
 var roster = new EndpointRoster(cfg.ServerUrl, msg => Log(msg));
 var primaryUri = new Uri(cfg.ServerUrl.TrimEnd('/'));
@@ -101,6 +130,48 @@ var rejoinGate = new SemaphoreSlim(1, 1);
 var joinBackoffMs = 2000;
 const int JoinBackoffCapMs = 60_000;
 long nextJoinAttemptAt = 0;
+
+/// <summary>
+/// The Host rewrites the protected config when its room is recreated: the room
+/// code and the worker password both change while this process keeps running.
+/// Reloading the file lets the worker join with the new pair instead of
+/// replaying a secret the Host has already discarded, and it costs no second
+/// elevation prompt. Returns true when the join credentials really changed.
+/// </summary>
+bool ReloadRotatedCredentials()
+{
+    lock (configReloadSync)
+    {
+        // Chỉ log loại lỗi, không log nội dung file hay bí mật. Cổng chỉ đẩy
+        // mốc mtime sau khi nạp xong nên một lần lỗi vẫn còn cơ hội thử lại.
+        if (!configGate.TryReload(() => AgentConfig.Load(Log), out var loaded,
+                ex => Log($"[AGENT] could not reload config: {ex.GetType().Name}")))
+            return false;
+        var fresh = loaded!;
+        var previous = cfg;
+        cfg = fresh;
+        if (previous.HasSameJoinCredentials(fresh))
+            return false;
+        if (!string.Equals(previous.ServerUrl, fresh.ServerUrl,
+                StringComparison.Ordinal))
+        {
+            try
+            {
+                roster.ResetTo(fresh.ServerUrl, fresh.LanUrl, fresh.TunnelUrl);
+            }
+            catch (InvalidOperationException ex)
+            {
+                Log($"[AGENT] keeping previous endpoints: {ex.Message}");
+            }
+        }
+        // A rotated credential is new information: the old backoff only counted
+        // attempts against a room code and password that no longer exist.
+        joinBackoffMs = 2000;
+        Interlocked.Exchange(ref nextJoinAttemptAt, 0);
+        Log("[AGENT] room credentials changed on disk — joining with the new pair");
+        return true;
+    }
+}
 Log($"[AGENT] {cfg.NodeName} starting, server = "
     + $"{EndpointRoster.SanitizeEndpointForLog(roster.Current)}, "
     + $"room = {cfg.RoomCode}");
@@ -149,6 +220,7 @@ async Task<(string Token, RoomConfig Room)> JoinAsync()
     await joinGate.WaitAsync();
     try
     {
+        ReloadRotatedCredentials();
         var body = JsonSerializer.Serialize(new Dictionary<string, object?>
         {
             ["room_code"] = cfg.RoomCode,
@@ -225,6 +297,9 @@ async Task<bool> RejoinAsync(string reason, string? rejectedToken)
         if (!string.IsNullOrWhiteSpace(token)
             && !string.Equals(token, rejectedToken, StringComparison.Ordinal))
             return true;
+        // Checked before the backoff gate: a long penalty must not hide the
+        // credentials the Host has just written for this worker.
+        ReloadRotatedCredentials();
         var now = Environment.TickCount64;
         if (now < Interlocked.Read(ref nextJoinAttemptAt))
             return false;
@@ -347,18 +422,18 @@ async Task EnsureLlmAsync(string reason)
         var prog = new Progress<double>(p =>
         {
             if (p is 0 or 1 or >= 0.99)
-                Log($"[LLM] tải/khởi động tiến độ {p:P0} ({reason})");
+                Log($"[LLM] download/startup progress {p:P0} ({reason})");
         });
         llmReady = await llm.EnsureReadyAsync(roomCfg, prog);
     }
     catch (DownloadRejectedException dex)
     {
-        Log($"[LLM] từ chối chuỗi cung ứng:\n{dex.Message}");
+        Log($"[LLM] supply-chain rejected:\n{dex.Message}");
         llmReady = false;
     }
     catch (Exception ex)
     {
-        Log($"[LLM] không sẵn sàng: {ex.Message} — vẫn chạy burn/telemetry");
+        Log($"[LLM] not ready: {ex.Message} — continuing burn/telemetry");
         llmReady = false;
     }
     finally
@@ -375,7 +450,7 @@ async Task ReportRuntimeDeathAsync()
     // llama-server có thể chết khi nhàn rỗi. Hạ readiness trước chu kỳ
     // scheduler kế tiếp để Host không lease chat vào runtime đã mất.
     llmReady = false;
-    Log("[LLM] runtime đã dừng ngoài job — báo not-ready");
+    Log("[LLM] runtime stopped outside a job — reporting not-ready");
     await ReportReadyAsync();
 }
 
@@ -550,20 +625,31 @@ async Task<bool> PostAgentPayloadAsync(string path, object payload)
             h => h.PostAsync(path,
                 new StringContent(json, Encoding.UTF8, "application/json")), token);
         if (resp.IsSuccessStatusCode) return true;
+        var body = "";
+        try { body = await resp.Content.ReadAsStringAsync(); }
+        catch { /* ignore read errors */ }
+        if (body.Length > 200) body = body[..200];
         if (resp.StatusCode is System.Net.HttpStatusCode.Unauthorized
             or System.Net.HttpStatusCode.Forbidden)
         {
+            Log($"[JOB] {path} HTTP {(int)resp.StatusCode} — rejoining");
             await RejoinAsync("job-post-rejoin", token);
             continue;
         }
         if (resp.StatusCode == System.Net.HttpStatusCode.Conflict)
         {
-            Log($"[JOB] {path} bị từ chối do attempt cũ");
+            Log($"[JOB] {path} HTTP 409 stale attempt body={body}");
             return false;
         }
-        await Task.Delay(250 * (attempt + 1));
+        var retryAfterMs = 250 * (attempt + 1);
+        if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests
+            && resp.Headers.RetryAfter?.Delta is TimeSpan ra)
+            retryAfterMs = (int)Math.Clamp(ra.TotalMilliseconds, 250, 60_000);
+        Log($"[JOB] {path} HTTP {(int)resp.StatusCode} retry={attempt + 1} "
+            + $"body={body}");
+        await Task.Delay(retryAfterMs);
     }
-    Log($"[JOB] {path} không gửi được sau retry");
+    Log($"[JOB] {path} failed after retries");
     return false;
 }
 
@@ -582,9 +668,11 @@ async Task<int> PostChunkAsync(string jobId, string? attemptId, int firstSeq,
     var sent = 0;
     foreach (var piece in delta.Chunk(4096))
     {
-        await PostAgentPayloadAsync($"/jobs/{Uri.EscapeDataString(jobId)}/events",
+        var ok = await PostAgentPayloadAsync(
+            $"/jobs/{Uri.EscapeDataString(jobId)}/events",
             new { attempt_id = attemptId, seq = firstSeq + sent,
                 delta = new string(piece) });
+        if (!ok) return sent;
         sent++;
     }
     return sent;
@@ -624,7 +712,7 @@ var jobLoop = Task.Run(async () =>
                             llmReady = false;
                             await ReportReadyAsync();
                         }
-                        Log($"[JOB] {id} chat nhưng runtime chưa sẵn sàng → error");
+                        Log($"[JOB] {id} chat but runtime not ready → error");
                         await PostResultAsync(new Dictionary<string, object?>
                         {
                             ["job_id"] = id,
@@ -638,6 +726,7 @@ var jobLoop = Task.Run(async () =>
                     var prompt = root.GetProperty("prompt").GetString() ?? "";
                     var maxTokens = 512;
                     var temperature = 0.7;
+                    var wantStream = false;
                     if (root.TryGetProperty("params", out var pEl))
                     {
                         if (pEl.TryGetProperty("max_tokens", out var mt)
@@ -654,6 +743,10 @@ var jobLoop = Task.Run(async () =>
                                     tpRaw, out temperature, out var tpReason))
                                 Log($"[JOB] {id} clamp {tpReason} → {temperature}");
                         }
+                        if (pEl.TryGetProperty("stream", out var stEl)
+                            && (stEl.ValueKind is JsonValueKind.True
+                                or JsonValueKind.False))
+                            wantStream = stEl.GetBoolean();
                     }
                     var deadlineS = 60;
                     if (root.TryGetProperty("deadline_s", out var dl)
@@ -665,7 +758,8 @@ var jobLoop = Task.Run(async () =>
                     }
                     // Log metadata only — NEVER prompt text (S13).
                     Log($"[JOB] chat {id}: max_tokens={maxTokens} "
-                        + $"prompt_len={prompt.Length} deadline={deadlineS}s");
+                        + $"prompt_len={prompt.Length} deadline={deadlineS}s "
+                        + $"stream={wantStream}");
 
                     var energy = new EnergySampler(powerModel);
                     double? peakTemp = null;
@@ -695,14 +789,17 @@ var jobLoop = Task.Run(async () =>
                             }
                         }, cts.Token);
 
-                        var sequence = 0;
+                        EventBatcher? batcher = wantStream
+                            ? new EventBatcher(id, attemptId, 0, PostChunkAsync)
+                            : null;
+                        Func<string, Task>? onDelta = batcher is null
+                            ? null
+                            : async delta => await batcher.AddAsync(delta);
                         var result = await llm.GenerateAsync(
                             prompt, new GenParams(maxTokens, temperature),
-                            cts.Token, async delta =>
-                            {
-                                sequence += await PostChunkAsync(id, attemptId,
-                                    sequence, delta);
-                            });
+                            cts.Token, onDelta);
+                        if (batcher is not null)
+                            await batcher.FlushAsync();
                         cts.Cancel();
                         try { await sampleTask; } catch { /* cancelled */ }
                         sw.Stop();

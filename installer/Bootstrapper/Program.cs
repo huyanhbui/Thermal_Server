@@ -2,10 +2,12 @@
 // vào ProgramData sau một lần UAC thông thường.
 using System.IO.Compression;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text.Json;
 
 const string PayloadResource = "Thermal.Payload.zip";
+const string PayloadHashFile = "payload-hash.txt";
 var command = args.FirstOrDefault()?.TrimStart('-').ToLowerInvariant() ?? "install";
 if (command is not ("install" or "repair" or "update" or "uninstall"))
 {
@@ -37,6 +39,7 @@ if (payload is null)
     Console.Error.WriteLine("Gói cài đặt thiếu payload. Hãy build bằng publish_orchestrator.ps1.");
     return 1;
 }
+var payloadHash = ComputePayloadHash(payload);
 Directory.CreateDirectory(installRoot);
 var staging = Path.Combine(installRoot, ".staging-" + Guid.NewGuid().ToString("N"));
 string? destination = null;
@@ -49,6 +52,7 @@ try
 
     var manifestPath = Path.Combine(staging, "payload-manifest.json");
     var version = ReadVersion(manifestPath);
+    File.WriteAllText(Path.Combine(staging, PayloadHashFile), payloadHash);
     var versionsRoot = Path.Combine(installRoot, "versions");
     Directory.CreateDirectory(versionsRoot);
     // Bản mới có thư mục đích khác bản đang chạy. Dừng payload cũ trước khi
@@ -56,25 +60,37 @@ try
     if (command == "update")
         StopRunningPayloadProcesses(versionsRoot);
     destination = Path.Combine(versionsRoot, version);
-    if (Directory.Exists(destination))
+    var replaceInstalled = command is "repair" or "update";
+    if (Directory.Exists(destination) && !replaceInstalled)
     {
-        if (command is not ("repair" or "update"))
+        // Hai lần build khác nhau có thể mang cùng nhãn version (ví dụ "dev").
+        // So hash payload thay vì so tên, nếu không install sẽ âm thầm khởi
+        // động lại đúng bản cũ và người dùng tưởng bản mới không có tác dụng.
+        if (string.Equals(
+                ReadInstalledHash(Path.Combine(destination, PayloadHashFile)),
+                payloadHash, StringComparison.OrdinalIgnoreCase))
         {
             Console.WriteLine($"Thermal Orchestrator {version} đã được cài.");
             StartHost(destination);
             return 0;
         }
-        if (command == "update")
+        Console.WriteLine(
+            $"Phiên bản {version} đã cài nhưng nội dung khác; đang cài đè.");
+        StopRunningPayloadProcesses(versionsRoot);
+    }
+    if (Directory.Exists(destination))
+    {
+        if (command == "repair")
+        {
+            Directory.Delete(destination, recursive: true);
+        }
+        else
         {
             // Giữ nguyên payload đang chạy cho đến khi payload mới giải nén xong.
             // Bản cập nhật lỗi có thể trả về thư mục cũ thay vì làm hỏng host.
             previousDestination = destination + ".previous-"
                 + Guid.NewGuid().ToString("N");
             Directory.Move(destination, previousDestination);
-        }
-        else
-        {
-            Directory.Delete(destination, recursive: true);
         }
     }
     Directory.Move(staging, destination);
@@ -163,6 +179,29 @@ static void ExtractSafely(ZipArchive archive, string destination)
             throw new InvalidDataException("Payload contains an invalid path.");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         entry.ExtractToFile(path, overwrite: true);
+    }
+}
+
+static string ComputePayloadHash(Stream payload)
+{
+    var hash = Convert.ToHexString(SHA256.HashData(payload));
+    payload.Position = 0;
+    return hash;
+}
+
+static string? ReadInstalledHash(string path)
+{
+    if (!File.Exists(path))
+        return null;
+    try
+    {
+        return File.ReadAllText(path).Trim();
+    }
+    catch (IOException)
+    {
+        // Không đọc được nghĩa là không chứng minh được bản cài còn nguyên vẹn;
+        // coi như khác payload và cài lại.
+        return null;
     }
 }
 

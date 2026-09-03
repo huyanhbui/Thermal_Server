@@ -44,17 +44,19 @@ Phân tích đầy đủ: [01 §S3](01-danh-gia-thiet-ke-hien-tai.md#s3--chỉ-s
 
 ## 2. Nguyên tắc ba tầng
 
+Trên dashboard (UI tiếng Anh) ba tầng map 1–1: **ĐO THẬT → MEASURED**, **SUY RA → DERIVED**, **NGOẠI SUY → PROJECTED**. Không dùng nhãn “FALLBACK” cho Tầng 3 (tránh nhầm với linear forecast fallback).
+
 ```
 ┌───────────────────────────────────────────────────────────────┐
-│  TẦNG 1 — ĐO THẬT                          bảo vệ được 100%   │
+│  TẦNG 1 — ĐO THẬT / MEASURED               bảo vệ được 100%   │
 │  Con số lấy trực tiếp từ cảm biến và bộ đếm.                  │
 │  J/token · so sánh A/B · giây throttle tránh được             │
 ├───────────────────────────────────────────────────────────────┤
-│  TẦNG 2 — SUY RA                    có giả định, ghi rõ ràng  │
+│  TẦNG 2 — SUY RA / DERIVED          có giả định, ghi rõ ràng  │
 │  Con số tính từ mô hình vật lý dựa trên số đo Tầng 1.         │
 │  Điện rò theo nhiệt · điện quạt · hệ số làm mát theo site     │
 ├───────────────────────────────────────────────────────────────┤
-│  TẦNG 3 — NGOẠI SUY                     dự phóng, không phải  │
+│  TẦNG 3 — NGOẠI SUY / PROJECTED         dự phóng, không phải  │
 │  Chiếu tuyến tính lên quy mô lớn hơn.        kết quả đo       │
 │  N node × T thời gian · VNĐ · CO₂ · định giá carbon           │
 └───────────────────────────────────────────────────────────────┘

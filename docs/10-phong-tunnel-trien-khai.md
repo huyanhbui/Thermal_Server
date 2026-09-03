@@ -161,21 +161,23 @@ Xảy ra thường xuyên. Đường dự phòng phải luôn có và phải n�
 | Quyền | Người dùng thường + tường lửa một lần | Administrator (đọc cảm biến) |
 | Thành phần | Engine Python, dashboard, launcher | Agent, sensor, LLM runner |
 
-**Host cài Python nhúng.** Nghe nặng nề, nhưng host là **một máy duy nhất do người triển khai kiểm soát**, còn worker là 9 máy của người khác. Ràng buộc "không cần cài gì" chỉ áp dụng cho worker. Đổi lại, ta giữ được toàn bộ engine Python đang có với 32 test đang xanh, thay vì viết lại sang C#.
+**Host cài Python nhúng.** Nghe nặng nề, nhưng host là **một máy duy nhất do người triển khai kiểm soát**, còn worker là 9 máy của người khác. Ràng buộc "không cần cài gì" chỉ áp dụng cho worker. Đổi lại, ta giữ được toàn bộ engine Python đang có với bộ pytest hành vi (hiện ~380), thay vì viết lại sang C#.
 
 ### Cấu trúc thư mục
 
+ThermalOrchestrator đóng gói ghi dữ liệu Host qua `THERMAL_DATA_DIR` — mặc định **`%ProgramData%\ThermalOrchestrator\shared`**. `telemetry.db`, `model.pkl`, `settings.json` / room state nằm cùng data dir đó; Forecaster nạp `model.pkl` từ đây (không phụ thuộc CWD).
+
 ```
-%LOCALAPPDATA%\ThermalOrchestrator\
-   ├─ bin\           tệp thực thi
-   ├─ runtime\       runtime LLM đã tải (worker)
-   ├─ models\        tệp mô hình đã tải (worker)
-   ├─ data\          telemetry.db, model.pkl, power_model.json (host)
-   ├─ config\        settings.json, esg_config.json, room.json
-   └─ logs\          server.log, agent.log
+%ProgramData%\ThermalOrchestrator\
+   ├─ shared\        THERMAL_DATA_DIR — telemetry.db, model.pkl, …
+   ├─ versions\      payload Host/Agent theo version
+   ├─ agent\         config.json (DPAPI)
+   └─ …
+
+(layout cài script cũ còn dùng data\ cạnh bin\; packaged Host hiện tại = shared\)
 ```
 
-Đặt trong `%LOCALAPPDATA%` chứ không phải `Program Files`: **cài được mà không cần quyền quản trị**. Agent vẫn cần Administrator lúc *chạy* để đọc cảm biến, nhưng lúc *cài* thì không — bớt được một rào cản đáng kể ở môi trường doanh nghiệp.
+Cài vào `%ProgramData%` cần UAC một lần. Agent vẫn cần Administrator lúc *chạy* để đọc cảm biến.
 
 ### Trình hướng dẫn lần đầu
 

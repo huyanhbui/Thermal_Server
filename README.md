@@ -119,7 +119,9 @@ server\.venv\Scripts\python.exe -m pytest server\tests\ -q
 dotnet test agent\NodeAgent.Tests\NodeAgent.Tests.csproj -c Release
 ```
 
-Kết quả hiện được xác minh: Python `351/351`, .NET `55/55`.
+**Tình trạng:** Sẵn sàng Chung kết - Pass 100% Tests (Host & Worker).
+Kết quả xác minh thực tế: Python `392/392`, .NET `57/57`.
+
 
 Xem [HOW_IT_WORKS.md](HOW_IT_WORKS.md) để hiểu luồng hoạt động và xử lý sự
 cố; xem [BÁO CÁO TỔNG QUAN DỰ ÁN.md](BÁO%20CÁO%20TỔNG%20QUAN%20DỰ%20ÁN.md)

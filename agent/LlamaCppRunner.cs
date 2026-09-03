@@ -162,13 +162,13 @@ public sealed class LlamaCppRunner : ILlmRunner, IDisposable
             || string.IsNullOrWhiteSpace(cfg.RuntimeUrl)
             || string.IsNullOrWhiteSpace(cfg.RuntimeSha256))
         {
-            _log("[LLM] room_config thiếu URL/SHA256 — bỏ qua runtime");
+            _log("[LLM] room_config missing URL/SHA256 — skip runtime");
             return false;
         }
         if (string.IsNullOrWhiteSpace(cfg.LlamaServerExeSha256)
             || string.IsNullOrWhiteSpace(cfg.LlamaServerImplDllSha256))
         {
-            _log("[LLM] room_config thiếu hash exe/dll — bỏ qua runtime");
+            _log("[LLM] room_config missing exe/dll hashes — skip runtime");
             return false;
         }
 
@@ -190,7 +190,7 @@ public sealed class LlamaCppRunner : ILlmRunner, IDisposable
             + Path.DirectorySeparatorChar;
         if (!modelPath.StartsWith(modelsRoot, StringComparison.OrdinalIgnoreCase))
         {
-            _log("[LLM] model path thoát khỏi thư mục models — từ chối");
+            _log("[LLM] model path escaped models dir — rejected");
             return false;
         }
         var sameModel = _ready
@@ -350,7 +350,7 @@ public sealed class LlamaCppRunner : ILlmRunner, IDisposable
             if (startupAttempt > 0)
             {
                 var delay = StartupBackoffDelay(startupAttempt - 1);
-                _log($"[LLM] thử khởi động lại sau {delay.TotalMilliseconds:F0}ms");
+                _log($"[LLM] retrying startup after {delay.TotalMilliseconds:F0}ms");
                 await Task.Delay(delay, overallCts.Token);
             }
 
@@ -405,7 +405,7 @@ public sealed class LlamaCppRunner : ILlmRunner, IDisposable
                     _job = WindowsProcessJob.TryAssign(proc, _log);
                     proc = null;
                     client = null;
-                    _log($"[LLM] llama-server sẵn sàng trên 127.0.0.1:{_port}");
+                    _log($"[LLM] llama-server ready on 127.0.0.1:{_port}");
                     return;
                 }
                 last = new TimeoutException(
@@ -427,7 +427,7 @@ public sealed class LlamaCppRunner : ILlmRunner, IDisposable
                     || msg.Contains("in use", StringComparison.OrdinalIgnoreCase)
                     || msg.Contains("thoát sớm", StringComparison.OrdinalIgnoreCase))
                 {
-                    _log($"[LLM] khởi động lỗi (retry): {ex.GetType().Name}");
+                    _log($"[LLM] startup error (retry): {ex.GetType().Name}");
                 }
             }
 
@@ -675,7 +675,7 @@ public sealed class LlamaCppRunner : ILlmRunner, IDisposable
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            _log("[LLM] khởi động lại runtime sau timeout/hang");
+            _log("[LLM] restarting runtime after timeout/hang");
             if (!string.IsNullOrWhiteSpace(cfg.ModelSha256))
                 _modelSha256 = cfg.ModelSha256;
             if (!string.IsNullOrWhiteSpace(cfg.LlamaServerExeSha256))

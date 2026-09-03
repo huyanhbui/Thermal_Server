@@ -61,9 +61,13 @@ class TokenRateLimiter:
 # docs/06
 INGEST_MAX = 2
 INGEST_WINDOW_S = 1.0
-CHAT_MAX = 10
+CHAT_MAX = 60
 CHAT_WINDOW_S = 60.0
 DEFAULT_MAX = 60
 DEFAULT_WINDOW_S = 60.0
 JOBS_MAX = 30
 JOBS_WINDOW_S = 60.0
+# Streaming chat deltas — separate from DEFAULT so a 256-token
+# response cannot exhaust the shared 60/min admin/worker quota.
+JOB_EVENTS_MAX = 600
+JOB_EVENTS_WINDOW_S = 60.0

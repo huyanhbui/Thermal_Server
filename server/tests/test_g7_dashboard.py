@@ -147,6 +147,7 @@ def test_dashboard_exposes_an_accessible_light_first_operational_view():
         encoding="utf-8")
     assert re.search(r"color-scheme\s*:\s*light\b", html)
     assert 'id="themeToggle"' in html
+    assert 'id="themeToggleLanding"' in html
     assert "data-theme" in html
     assert re.search(r"data-theme\s*=\s*[\"']dark[\"']", html)
     assert "localStorage" in html
@@ -154,6 +155,85 @@ def test_dashboard_exposes_an_accessible_light_first_operational_view():
     assert "--surface" in html
     assert "--ink" in html
     assert "--line" in html
+
+
+def test_dashboard_defaults_to_light_and_never_infers_dark_from_the_os():
+    """Không có lựa chọn đã lưu thì phải là sáng — không đoán theo hệ điều hành."""
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+
+    # Mặc định sáng phải nằm ngay trên nhánh đọc localStorage, không phải
+    # một biến 'dark' được đặt ở chỗ khác.
+    assert re.search(
+        r"localStorage\.getItem\(THEME_KEY\)[^;]*\|\|\s*['\"]light['\"]", html)
+    assert re.search(r"let theme\s*=\s*['\"]light['\"]", html)
+    # Nhánh dark-first cũ (bám prefers-color-scheme) không được quay lại.
+    assert "prefers-color-scheme" not in html
+    assert not re.search(r"prefersLight\s*\?", html)
+    assert not re.search(r"theme\s*=\s*['\"]dark['\"]\s*;", html)
+
+
+def test_dashboard_keeps_the_durable_theme_key_and_migrates_the_legacy_one():
+    """Đổi khóa localStorage sẽ quên lựa chọn của người dùng — phải di trú."""
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+
+    assert re.search(
+        r"const THEME_KEY\s*=\s*['\"]thermal_dashboard_theme['\"]", html)
+    assert re.search(r"LEGACY_THEME_KEYS\s*=\s*\[[^\]]*thermal_theme", html)
+    assert "function migrateLegacyTheme" in html
+    assert "migrateLegacyTheme()" in html
+    assert re.search(r"localStorage\.removeItem\(key\)", html)
+    # Nút bật/tắt vẫn ghi vào đúng khóa đó.
+    assert re.search(r"localStorage\.setItem\(THEME_KEY,\s*theme\)", html)
+
+
+def test_dashboard_chart_paints_grid_labels_and_series_from_theme_tokens():
+    """Đồ thị SVG phải đổi màu theo theme, không hardcode màu của chế độ sáng."""
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+
+    for hardcoded in ("#d7e0eb", "#526176", "#b4232d"):
+        assert hardcoded not in html
+    assert "--legend:#" not in html  # chú giải cũng đi qua token
+    assert re.search(
+        r"\.thermal-chart \.chart-grid\s*\{[^}]*stroke:var\(--line\)", html)
+    assert re.search(
+        r"\.thermal-chart \.chart-axis\s*\{[^}]*fill:var\(--muted\)", html)
+    assert re.search(
+        r"\.thermal-chart \.chart-threshold\s*\{[^}]*stroke:var\(--danger\)",
+        html)
+    assert 'class="chart-grid"' in html
+    assert 'class="chart-axis"' in html
+    assert 'class="chart-threshold' in html
+    assert "var(--chart-${index % seriesTokens + 1})" in html
+    assert "--chart-1:" in html
+    assert re.search(r"\[data-theme=\"dark\"\][^{]*\{[^}]*--chart-1:", html)
+
+
+def test_dashboard_uses_one_token_stack_and_readable_status_text():
+    """Một bảng token duy nhất; chữ trạng thái dùng --muted để đủ tương phản."""
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+
+    assert len(re.findall(r":root\s*\{", html)) == 1
+    assert re.search(r"#chatStatus\s*\{[^}]*color:var\(--muted\)", html)
+    assert re.search(r"#copyStatus\s*\{[^}]*color:var\(--muted\)", html)
+
+
+def test_dashboard_landing_tabs_stay_tappable_and_keep_their_focus_ring():
+    """Tab đủ 44px và không bị tắt outline khi đang ở trạng thái active."""
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+
+    assert re.search(
+        r"\.landing-tabs button\s*\{[^}]*min-height:44px", html)
+    active_rules = re.findall(
+        r"\.landing-tabs button\.active\s*\{([^}]*)\}", html)
+    assert active_rules
+    for rule in active_rules:
+        assert "outline" not in rule
+    assert "button:focus-visible" in html
 
 
 def test_dashboard_keeps_a_bounded_accessible_fifteen_minute_chart():
@@ -210,12 +290,63 @@ def test_dashboard_hides_missing_or_stale_node_values_instead_of_rendering_na():
 
 
 def test_dashboard_hides_esg_rows_that_have_no_measured_evidence():
-    """Chưa đủ mẫu thì chỉ báo tình trạng, không phô số suy ra/dự phóng."""
+    """Chưa có J/token thì empty-state; đã có mẫu sensor thì hiện số tạm."""
     html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
         encoding="utf-8")
     assert "#esgBlock1 .row" in html
-    assert "document.getElementById('esgBlock2').hidden = insufficientMeasured" in html
-    assert "document.getElementById('esgBlock3').hidden = insufficientMeasured" in html
+    assert "hasMeasuredValue" in html
+    assert "document.getElementById('esgBlock2').hidden = false" in html
+    assert "document.getElementById('esgBlock3').hidden = false" in html
+    assert 'id="esgMeasuredEmpty"' in html
+    assert "energy_source=sensor" in html
+    assert "CPU temperature alone is not MEASURED energy" in html
+
+
+def test_dashboard_centers_chat_and_raises_token_ceiling():
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+    assert 'class="chat-column"' in html
+    assert "CHAT_MAX_TOKENS = 4096" in html
+    assert "max_tokens: CHAT_MAX_TOKENS" in html
+    assert "formatChatTokens" in html
+    assert "compactChatHistory" in html
+    assert "buildPromptWithContext" in html
+    assert "chatContextTurns" in html
+    assert 'id="chatContextMeta"' in html
+    assert 'id="chatTokens"' in html
+    assert "CHAT_PROMPT_MAX_CHARS" in html
+
+
+def test_dashboard_chart_empty_state_cannot_stack_with_series():
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+    assert "setTelemetryChartVisibility" in html
+    assert 'data-has-telemetry="0"' in html
+    assert '.chart-panel[data-has-telemetry="1"] #chartEmptyState' in html
+    assert '.chart-panel[data-has-telemetry="0"] #telemetryChart' in html
+    assert 'class="chart-body"' in html
+
+
+def test_dashboard_exports_esg_events_and_room_audit_separately():
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+    assert 'id="csvEsgEventsLink"' in html
+    assert "/api/esg.csv" in html
+    assert "/api/esg/report.csv" in html
+    assert "/api/audit.csv" in html
+    assert "Export ESG events" in html
+    assert "Export room audit" in html
+    assert "Could not download " in html
+
+
+def test_dashboard_syncs_ui_paths_for_landing_login_and_app():
+    html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
+        encoding="utf-8")
+    assert "function syncUiPath" in html
+    assert "syncUiPath('/app')" in html
+    assert "syncUiPath('/login')" in html
+    assert "syncUiPath('/landing')" in html
+    assert "popstate" in html
 
 
 def test_dashboard_exposes_operational_empty_state_and_accessible_password_toggles():
@@ -240,23 +371,27 @@ def test_dashboard_exposes_operational_empty_state_and_accessible_password_toggl
 
 
 def test_dashboard_has_a_truthful_public_landing_view_before_authentication():
-    """Landing phải giải thích luồng thật, không biến hộp đăng nhập thành trang giới thiệu."""
+    """Landing explains the real flow; login is not the marketing page."""
     html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
         encoding="utf-8")
     assert 'id="landingView"' in html
     assert 'id="openCreateFromLanding"' in html
     assert 'id="openJoinFromLanding"' in html
-    assert "Worker chỉ kết nối ra ngoài" in html
-    assert "Số đo thật tách khỏi số suy ra" in html
+    assert "Workers only connect outward" in html
+    assert "Measured stays separate from inferred" in html
     assert "model READY" in html
     assert "showAuthFromLanding" in html
+    assert 'lang="en"' in html
+    assert 'id="themeToggleLanding"' in html
+    assert "thermal_owm_api_key" in html
+    assert "inviteQrCanvas" in html
 
 
 def test_dashboard_does_not_reserve_blank_map_space_and_explains_empty_activity():
     html = (Path(__file__).parents[1] / "static" / "dashboard.html").read_text(
         encoding="utf-8")
     assert ".map { position:relative; display:flex; gap:24px; align-items:flex-start; min-height:260px; }" not in html
-    assert "Chưa có quyết định điều phối" in html
+    assert "No dispatch decisions yet" in html
 
 
 def test_dashboard_uses_text_and_svg_not_emoji_as_structural_icons():

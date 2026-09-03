@@ -103,6 +103,19 @@ public record AgentConfig(
         return cfg;
     }
 
+    /// <summary>
+    /// True when a reloaded config still joins with the same identity and
+    /// secret. Record equality cannot answer this: the worker rewrites lanUrl
+    /// and tunnelUrl after every successful join, while the Host rewrites the
+    /// room code and password when its room is recreated.
+    /// </summary>
+    public bool HasSameJoinCredentials(AgentConfig? other) =>
+        other is not null
+        && string.Equals(NodeName, other.NodeName, StringComparison.Ordinal)
+        && string.Equals(ServerUrl, other.ServerUrl, StringComparison.Ordinal)
+        && string.Equals(RoomCode, other.RoomCode, StringComparison.Ordinal)
+        && string.Equals(Password, other.Password, StringComparison.Ordinal);
+
     public static string? FilterSecondary(
         string primaryUrl, string? secondary, string label,
         Action<string>? log = null)
