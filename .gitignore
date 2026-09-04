@@ -1,11 +1,44 @@
+__pycache__/
+*.pyc
+.venv/
+**/__pycache__/
+**/.venv/
+**/.pytest_cache/
+**/bin/
+**/obj/
+server/telemetry.db
+server/room.json
+agent/config.json
+*.db-*
+server/model.pkl
+server/settings.json
+server/weather_local.json
+server/.room_credentials.txt
+**/weather_local.json
+agent/bin/
+agent/obj/
+*.log
+scripts/bench_llm/results/
+scripts/bench_llm/results_onnx/
+scripts/bench_llm/results_verify/
+scripts/bench_llm/assets/
+scripts/bench_llm/*.gguf
+artifacts/
+
+# Cấu hình và tài liệu nội bộ của môi trường phát triển.
 .agent/
 .agents/
 .cursor/
 AGENTS.md
+CLAUDE.md
 docs/IT-WHITELIST.md
 
+# Dữ liệu, log và kết quả chẩn đoán cục bộ.
 telemetry.db
 server.log*
 debug-*.log
 debug-*.txt
 pytest_*.txt
+
+# publish/ KHONG bi bo qua: file .exe duoc commit de doi nhom cung test.
+# Xem publish/NodeAgent/NodeAgent.exe (~69 MB).
